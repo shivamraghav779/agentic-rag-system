@@ -1,18 +1,18 @@
 """API dependencies for authentication and authorization."""
 from typing import Optional
 from fastapi import Depends, HTTPException, status
-from fastapi.security import APIKeyHeader, OAuth2PasswordBearer
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from app.core.security import decode_access_token
 from app.db.session import get_db
 from app.models.user import User
 
-oauth2_scheme = APIKeyHeader(name="Authorization", auto_error=False)
-
+# HTTP Bearer scheme for token authentication
+oauth2_scheme = HTTPBearer()
 
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    credentials: HTTPAuthorizationCredentials = Depends(oauth2_scheme),
     db: Session = Depends(get_db)
 ) -> User:
     """Get the current authenticated user from JWT token."""
@@ -22,6 +22,8 @@ async def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
     
+    # Extract token string from credentials
+    token = credentials.credentials
     payload = decode_access_token(token)
     if payload is None:
         raise credentials_exception
