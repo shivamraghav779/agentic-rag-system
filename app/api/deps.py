@@ -8,8 +8,6 @@ from app.core.security import decode_access_token
 from app.db.session import get_db
 from app.models.user import User
 
-# OAuth2 scheme
-# oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 oauth2_scheme = APIKeyHeader(name="Authorization", auto_error=False)
 
 
@@ -28,11 +26,11 @@ async def get_current_user(
     if payload is None:
         raise credentials_exception
     
-    username: str = payload.get("sub")
-    if username is None:
+    email: str = payload.get("sub")
+    if email is None:
         raise credentials_exception
     
-    user = db.query(User).filter(User.username == username).first()
+    user = db.query(User).filter(User.email == email).first()
     if user is None:
         raise credentials_exception
     

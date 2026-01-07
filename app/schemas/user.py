@@ -12,7 +12,7 @@ class UserSignup(BaseModel):
 
 class UserLogin(BaseModel):
     """User login request model."""
-    username: str
+    email: EmailStr
     password: str
 
 
