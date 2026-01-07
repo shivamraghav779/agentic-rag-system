@@ -98,9 +98,34 @@ Quick commands:
 - `./scripts/run_migrations.sh downgrade` - Rollback last migration
 - `./scripts/run_migrations.sh current` - Show current revision
 
+## Creating Admin User
+
+After setting up the database and running migrations, you can create an admin user using:
+
+```bash
+python scripts/create_admin.py
+```
+
+Or:
+
+```bash
+./scripts/create_admin.py
+```
+
+The script will:
+- Prompt for username, email, and password
+- Validate inputs and check for duplicates
+- Hash the password using Argon2
+- Create an admin user with `is_admin=True`
+- Allow you to set custom chat limit (default: 100)
+- Allow you to set account active status (default: active)
+
+**Note**: If a user with the same email already exists, the script will offer to make that user an admin instead of creating a duplicate.
+
 ## Notes
 
 - The database uses `utf8mb4` character set to support emojis and special characters
 - Tables can be created automatically by SQLAlchemy or via Alembic migrations
 - Make sure MySQL server is running before executing the scripts
+- Admin users have elevated privileges and can access admin endpoints
 
