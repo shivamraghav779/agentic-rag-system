@@ -1,0 +1,38 @@
+# FastAPI and server
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Database
+sqlalchemy
+psycopg2-binary
+alembic
+
+# Langchain and AI
+langchain
+langchain-core
+langchain-google-genai
+langchain-community
+google-generativeai
+
+# Document processing (Langchain loaders use these)
+pypdf
+python-docx
+beautifulsoup4
+lxml
+unstructured
+
+# Vector store
+faiss-cpu
+
+# Authentication
+python-jose[cryptography]
+passlib[argon2]
+argon2-cffi
+
+# Utilities
+python-dotenv
+pydantic
+pydantic-settings
+numpy
+setuptools
