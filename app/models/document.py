@@ -12,10 +12,10 @@ class Document(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    filename = Column(String, nullable=False, index=True)
-    file_type = Column(String, nullable=False)  # pdf, docx, txt, html
-    file_path = Column(String, nullable=False)
-    vector_store_path = Column(String, nullable=False)
+    filename = Column(String(500), nullable=False, index=True)
+    file_type = Column(String(50), nullable=False)  # pdf, docx, txt, html
+    file_path = Column(String(1000), nullable=False)
+    vector_store_path = Column(String(1000), nullable=False)
     upload_date = Column(DateTime, default=datetime.utcnow)
     file_size = Column(Integer)  # Size in bytes
     chunk_count = Column(Integer, default=0)

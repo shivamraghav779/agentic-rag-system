@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     
     # Database
-    database_url: str = "postgresql://user:password@localhost:5432/chatbot_db"
+    database_url: str = "mysql+pymysql://user:password@localhost:3306/chatbot_db"
     
     # Gemini API
     google_api_key: str = ""

@@ -11,7 +11,7 @@ The system processes documents, builds contextual embeddings, and enables accura
 - 💬 **Interactive chat** - Chat directly with uploaded documents
 - 🧠 **Context-aware responses** - Uses document retrieval for accurate answers
 - 🚀 **CPU-optimized** - Works efficiently on CPU machines without GPU
-- 🗄️ **PostgreSQL integration** - Robust database for document metadata
+- 🗄️ **MySQL integration** - Robust database for document metadata
 - 🔍 **FAISS vector search** - Fast and efficient similarity search
 
 ## 🛠️ Technology Stack
@@ -19,14 +19,14 @@ The system processes documents, builds contextual embeddings, and enables accura
 - **Vector Database**: FAISS (CPU-optimized)
 - **AI Framework**: Langchain
 - **Language Model**: Google Gemini
-- **Database**: PostgreSQL
+- **Database**: MySQL
 - **Backend**: FastAPI
 - **Embeddings**: Google Generative AI Embeddings
 
 ## 📋 Prerequisites
 
 - Python 3.8 or higher
-- PostgreSQL 12 or higher
+- MySQL 5.7 or higher (or MariaDB 10.3+)
 - Google Gemini API key ([Get one here](https://makersuite.google.com/app/apikey))
 
 ## 🚀 Installation
@@ -51,19 +51,24 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 4. Set up PostgreSQL
+### 4. Set up MySQL
 
-Create a PostgreSQL database:
+Create a MySQL database:
 
 ```bash
-# Connect to PostgreSQL
-psql -U postgres
+# Connect to MySQL
+mysql -u root -p
 
 # Create database
-CREATE DATABASE chatbot_db;
+CREATE DATABASE chatbot_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+# Create user (optional, or use root)
+CREATE USER 'chatbot_user'@'localhost' IDENTIFIED BY 'your_password';
+GRANT ALL PRIVILEGES ON chatbot_db.* TO 'chatbot_user'@'localhost';
+FLUSH PRIVILEGES;
 
 # Exit
-\q
+EXIT;
 ```
 
 ### 5. Configure environment variables
@@ -72,7 +77,7 @@ Create a `.env` file in the project root:
 
 ```env
 # Database Configuration
-DATABASE_URL=postgresql://username:password@localhost:5432/chatbot_db
+DATABASE_URL=mysql+pymysql://username:password@localhost:3306/chatbot_db
 
 # Gemini API Configuration
 GOOGLE_API_KEY=your_gemini_api_key_here
@@ -234,7 +239,7 @@ Adjust document chunking in `.env`:
 
 1. **API Key Security**: Never commit your `.env` file with API keys
 2. **File Access**: Ensure proper file permissions on upload directories
-3. **Database Security**: Use strong PostgreSQL credentials
+3. **Database Security**: Use strong MySQL credentials
 4. **Network Security**: Consider adding authentication for production use
 
 ## 🐛 Troubleshooting
@@ -246,7 +251,7 @@ Adjust document chunking in `.env`:
    pip install -r requirements.txt
    ```
 
-2. **Database connection error**: Verify PostgreSQL is running and credentials are correct
+2. **Database connection error**: Verify MySQL is running and credentials are correct
 
 3. **Gemini API error**: Check that your API key is valid and has proper permissions
 
