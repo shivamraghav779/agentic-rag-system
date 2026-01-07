@@ -145,6 +145,49 @@ Answer:"""
         except Exception as e:
             raise Exception(f"Error querying RAG chain: {str(e)}")
     
+    def generate_conversation_title(self, question: str) -> str:
+        """Generate a concise title for a conversation based on the first question.
+        
+        Args:
+            question: The first question in the conversation
+            
+        Returns:
+            A concise title (max 100 characters) for the conversation
+        """
+        try:
+            prompt = f"""Generate a concise, descriptive title for a conversation that starts with this question: "{question}"
+
+Requirements:
+- The title should be a short, clear summary of what the conversation is about
+- Maximum 100 characters
+- Do not include quotation marks or special formatting
+- Return only the title, nothing else
+
+Title:"""
+            
+            # Generate title using Gemini with lower temperature for more consistent results
+            response = self.model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.3,  # Lower temperature for more consistent titles
+                    max_output_tokens=50,  # Titles should be short
+                )
+            )
+            
+            title = response.text.strip() if response.text else question[:100]
+            
+            # Remove any quotation marks that might be added
+            title = title.strip('"\'')
+            
+            # Ensure it doesn't exceed 100 characters
+            if len(title) > 100:
+                title = title[:97] + "..."
+            
+            return title if title else question[:100]
+        except Exception as e:
+            # Fallback to truncated question if title generation fails
+            return question[:100] if len(question) > 100 else question
+    
     def get_relevant_chunks(self, vector_store_path: str, query: str, k: int = None) -> List:
         """Get relevant document chunks for a query."""
         if k is None:

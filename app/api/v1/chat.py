@@ -88,10 +88,20 @@ async def chat_with_document(
             conversation = Conversation(
                 user_id=current_user.id,
                 document_id=document.id,
-                title=None  # Can be updated later
+                title=None  # Will be generated from first question
             )
             db.add(conversation)
             db.flush()  # Flush to get the conversation ID
+        
+        # Generate title if conversation doesn't have one (first question)
+        if not conversation.title:
+            try:
+                conversation.title = rag_chain.generate_conversation_title(request.question)
+                db.flush()  # Update the title
+            except Exception as e:
+                # If title generation fails, use truncated question as fallback
+                conversation.title = request.question[:100] if len(request.question) > 100 else request.question
+                db.flush()
         
         # Get last 5 chat history entries for this conversation (conversation context)
         recent_chats = db.query(ChatHistory).filter(
