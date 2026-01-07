@@ -23,5 +23,6 @@ class Document(Base):
     
     # Relationships
     owner = relationship("User", back_populates="documents")
+    conversations = relationship("Conversation", back_populates="document", cascade="all, delete-orphan")
     chat_history = relationship("ChatHistory", back_populates="document", cascade="all, delete-orphan")
 

@@ -22,5 +22,6 @@ class User(Base):
     
     # Relationships
     documents = relationship("Document", back_populates="owner", cascade="all, delete-orphan")
+    conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan")
     chat_history = relationship("ChatHistory", back_populates="user", cascade="all, delete-orphan")
 
