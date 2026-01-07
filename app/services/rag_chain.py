@@ -23,8 +23,15 @@ class RAGChain:
             context_parts.append(f"[Document {i}]\n{content}\n")
         return "\n".join(context_parts)
     
-    def query(self, vector_store_path: str, question: str) -> dict:
-        """Query the RAG chain with a question."""
+    def query(self, vector_store_path: str, question: str, system_prompt: str = None, instruction_prompt: str = None) -> dict:
+        """Query the RAG chain with a question.
+        
+        Args:
+            vector_store_path: Path to the vector store
+            question: User's question
+            system_prompt: User's custom system prompt (optional)
+            instruction_prompt: Common instruction prompt (optional, uses default if not provided)
+        """
         try:
             # Retrieve relevant documents
             relevant_docs = self.vector_store_manager.similarity_search(
@@ -40,15 +47,25 @@ class RAGChain:
             # Format context from retrieved documents
             context = self.format_context(relevant_docs)
             
+            # Use user's system prompt or default
+            if system_prompt:
+                system_part = system_prompt
+            else:
+                system_part = "You are a helpful AI assistant that answers questions based on the provided context from documents."
+            
+            # Use provided instruction prompt or default from config
+            if instruction_prompt is None:
+                instruction_prompt = settings.default_instruction_prompt
+            
             # Create prompt with context
-            prompt = f"""You are a helpful AI assistant that answers questions based on the provided context from documents.
+            prompt = f"""{system_part}
 
 Context from documents:
 {context}
 
 Question: {question}
 
-Please provide a comprehensive answer based on the context provided. If the context doesn't contain enough information to answer the question, say so clearly. Use the context to provide accurate and relevant information.
+{instruction_prompt}
 
 Answer:"""
             

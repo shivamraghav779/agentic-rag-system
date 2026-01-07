@@ -66,8 +66,12 @@ async def chat_with_document(
         )
     
     try:
-        # Query RAG chain
-        result = rag_chain.query(document.vector_store_path, request.question)
+        # Query RAG chain with user's system prompt
+        result = rag_chain.query(
+            document.vector_store_path, 
+            request.question,
+            system_prompt=current_user.system_prompt
+        )
         
         # Save chat history
         chat_history = ChatHistory(

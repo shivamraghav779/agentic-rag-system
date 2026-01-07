@@ -9,7 +9,7 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.models.user import User
 from app.api.deps import get_current_active_user
-from app.schemas.user import UserSignup, UserLogin, Token, UserResponse
+from app.schemas.user import UserSignup, UserLogin, Token, UserResponse, SystemPromptUpdate
 
 router = APIRouter()
 
@@ -93,5 +93,18 @@ async def get_current_user_info(
     current_user: User = Depends(get_current_active_user)
 ):
     """Get current user information."""
+    return current_user
+
+
+@router.patch("/me/system-prompt", response_model=UserResponse)
+async def update_system_prompt(
+    prompt_data: SystemPromptUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Update the current user's system prompt."""
+    current_user.system_prompt = prompt_data.system_prompt
+    db.commit()
+    db.refresh(current_user)
     return current_user
 

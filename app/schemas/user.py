@@ -30,6 +30,7 @@ class UserResponse(BaseModel):
     is_active: bool
     is_admin: bool
     chat_limit: int
+    system_prompt: str | None = None
     created_at: datetime
 
     class Config:
@@ -44,4 +45,9 @@ class PasswordUpdate(BaseModel):
 class ChatLimitUpdate(BaseModel):
     """Chat limit update model."""
     chat_limit: int
+
+
+class SystemPromptUpdate(BaseModel):
+    """System prompt update model."""
+    system_prompt: str | None = None
 

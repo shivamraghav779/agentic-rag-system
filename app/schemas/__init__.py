@@ -6,6 +6,7 @@ from app.schemas.user import (
     Token,
     PasswordUpdate,
     ChatLimitUpdate,
+    SystemPromptUpdate,
 )
 from app.schemas.document import (
     DocumentInfo,
@@ -24,6 +25,7 @@ __all__ = [
     "Token",
     "PasswordUpdate",
     "ChatLimitUpdate",
+    "SystemPromptUpdate",
     "DocumentInfo",
     "UploadResponse",
     "ChatRequest",

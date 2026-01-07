@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     retrieval_k: int = 4  # Number of documents to retrieve
     source_doc_preview_length: int = 500  # Characters to show in source preview
     
+    # Prompt Configuration
+    default_instruction_prompt: str = """Please provide a comprehensive answer based on the context provided. If the context doesn't contain enough information to answer the question, say so clearly. Use the context to provide accurate and relevant information."""
+    
     # JWT Authentication
     secret_key: str = "your-secret-key-change-this-in-production"
     algorithm: str = "HS256"

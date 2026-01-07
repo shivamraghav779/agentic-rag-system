@@ -1,5 +1,5 @@
 """User model."""
-from sqlalchemy import Column, Integer, String, DateTime, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
@@ -17,6 +17,7 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     is_admin = Column(Boolean, default=False)
     chat_limit = Column(Integer, default=3)  # Default 3 chats per user
+    system_prompt = Column(Text, nullable=True)  # User's custom system prompt
     created_at = Column(DateTime, default=datetime.utcnow)
     
     # Relationships
