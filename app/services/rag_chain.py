@@ -1,5 +1,6 @@
 """RAG chain implementation using direct Gemini API and FAISS."""
-from typing import List
+from typing import List, Optional, Dict
+from datetime import datetime
 import google.generativeai as genai
 from app.services.vector_store import VectorStoreManager
 from app.core.config import settings
@@ -23,7 +24,26 @@ class RAGChain:
             context_parts.append(f"[Document {i}]\n{content}\n")
         return "\n".join(context_parts)
     
-    def query(self, vector_store_path: str, question: str, system_prompt: str = None, instruction_prompt: str = None) -> dict:
+    def format_conversation_history(self, history: List[Dict[str, str]]) -> str:
+        """Format conversation history into a readable context string."""
+        if not history:
+            return ""
+        
+        history_parts = ["Previous conversation:"]
+        for i, chat in enumerate(history, 1):
+            history_parts.append(f"Q{i}: {chat.get('question', '')}")
+            history_parts.append(f"A{i}: {chat.get('answer', '')}")
+        
+        return "\n".join(history_parts)
+    
+    def query(
+        self, 
+        vector_store_path: str, 
+        question: str, 
+        system_prompt: str = None, 
+        instruction_prompt: str = None,
+        conversation_history: Optional[List[Dict[str, str]]] = None
+    ) -> dict:
         """Query the RAG chain with a question.
         
         Args:
@@ -31,6 +51,7 @@ class RAGChain:
             question: User's question
             system_prompt: User's custom system prompt (optional)
             instruction_prompt: Common instruction prompt (optional, uses default if not provided)
+            conversation_history: List of previous Q&A pairs for context (optional)
         """
         try:
             # Retrieve relevant documents
@@ -57,8 +78,35 @@ class RAGChain:
             if instruction_prompt is None:
                 instruction_prompt = settings.default_instruction_prompt
             
-            # Create prompt with context
-            prompt = f"""{system_part}
+            # Format conversation history if provided
+            history_context = ""
+            if conversation_history:
+                history_context = self.format_conversation_history(conversation_history)
+            
+            # Get current date and time
+            current_datetime = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+            date_context = f"Current date and time: {current_datetime}"
+            
+            # Create prompt with context, conversation history, and current date
+            if history_context:
+                prompt = f"""{system_part}
+
+{date_context}
+
+{history_context}
+
+Context from documents:
+{context}
+
+Current Question: {question}
+
+{instruction_prompt}
+
+Answer:"""
+            else:
+                prompt = f"""{system_part}
+
+{date_context}
 
 Context from documents:
 {context}

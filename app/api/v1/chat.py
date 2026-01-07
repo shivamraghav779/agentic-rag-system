@@ -66,11 +66,24 @@ async def chat_with_document(
         )
     
     try:
-        # Query RAG chain with user's system prompt
+        # Get last 5 chat history entries for this document (conversation context)
+        recent_chats = db.query(ChatHistory).filter(
+            ChatHistory.user_id == current_user.id,
+            ChatHistory.document_id == document.id
+        ).order_by(ChatHistory.created_at.desc()).limit(5).all()
+        
+        # Reverse to get chronological order (oldest first)
+        conversation_history = [
+            {"question": chat.question, "answer": chat.answer}
+            for chat in reversed(recent_chats)
+        ]
+        
+        # Query RAG chain with user's system prompt and conversation history
         result = rag_chain.query(
             document.vector_store_path, 
             request.question,
-            system_prompt=current_user.system_prompt
+            system_prompt=current_user.system_prompt,
+            conversation_history=conversation_history
         )
         
         # Save chat history

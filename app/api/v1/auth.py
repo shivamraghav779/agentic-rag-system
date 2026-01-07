@@ -4,12 +4,12 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.security import verify_password, get_password_hash, create_access_token
+from app.core.security import verify_password, get_password_hash, create_access_token, create_refresh_token, decode_refresh_token
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.user import User
 from app.api.deps import get_current_active_user
-from app.schemas.user import UserSignup, UserLogin, Token, UserResponse, SystemPromptUpdate
+from app.schemas.user import UserSignup, UserLogin, Token, UserResponse, SystemPromptUpdate, RefreshTokenRequest
 
 router = APIRouter()
 
@@ -85,7 +85,17 @@ async def login(
         data={"sub": user.email}, expires_delta=access_token_expires
     )
     
-    return {"access_token": access_token, "token_type": "bearer"}
+    # Create refresh token with email as subject
+    refresh_token_expires = timedelta(days=settings.refresh_token_expire_days)
+    refresh_token = create_refresh_token(
+        data={"sub": user.email}, expires_delta=refresh_token_expires
+    )
+    
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    }
 
 
 @router.get("/me", response_model=UserResponse)
@@ -94,6 +104,64 @@ async def get_current_user_info(
 ):
     """Get current user information."""
     return current_user
+
+
+@router.post("/refresh", response_model=Token)
+async def refresh_token(
+    refresh_data: RefreshTokenRequest,
+    db: Session = Depends(get_db)
+):
+    """Refresh access token using refresh token."""
+    # Decode and verify refresh token
+    payload = decode_refresh_token(refresh_data.refresh_token)
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Extract email from token
+    email: str = payload.get("sub")
+    if email is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Verify user exists and is active
+    user = db.query(User).filter(User.email == email).first()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User account is inactive"
+        )
+    
+    # Create new access token
+    access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
+    access_token = create_access_token(
+        data={"sub": user.email}, expires_delta=access_token_expires
+    )
+    
+    # Optionally create a new refresh token (rotate refresh token)
+    refresh_token_expires = timedelta(days=settings.refresh_token_expire_days)
+    refresh_token = create_refresh_token(
+        data={"sub": user.email}, expires_delta=refresh_token_expires
+    )
+    
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    }
 
 
 @router.patch("/me/system-prompt", response_model=UserResponse)
