@@ -91,6 +91,7 @@ The application follows a **3-layer architecture**:
 - `chat.py`: Chat and conversation endpoints
 - `organizations.py`: Organization management
 - `admin.py`: Admin-specific operations
+- `statistics.py`: Statistics and dashboard endpoints
 
 **Example**:
 ```python
@@ -124,6 +125,7 @@ async def upload_document(
 - `document_service.py`: Document processing and management
 - `chat_service.py`: Chat and conversation logic
 - `organization_service.py`: Organization management
+- `statistics_service.py`: Statistics and dashboard data generation
 - `document_processor.py`: Document parsing and chunking
 - `rag_chain.py`: RAG implementation with Gemini
 - `vector_store.py`: FAISS vector store management
@@ -187,7 +189,8 @@ chatbot/
 │   │       ├── documents.py   # Document management
 │   │       ├── chat.py        # Chat endpoints
 │   │       ├── organizations.py  # Organization management
-│   │       └── admin.py       # Admin operations
+│   │       ├── admin.py       # Admin operations
+│   │       └── statistics.py  # Statistics and dashboard
 │   │
 │   ├── core/                  # Core configuration
 │   │   ├── config.py          # Settings and configuration
@@ -216,7 +219,8 @@ chatbot/
 │   │   ├── user.py            # User schemas
 │   │   ├── document.py        # Document schemas
 │   │   ├── organization.py    # Organization schemas
-│   │   └── chat.py            # Chat schemas
+│   │   ├── chat.py            # Chat schemas
+│   │   └── statistics.py      # Statistics schemas
 │   │
 │   └── services/               # Business logic layer
 │       ├── auth_service.py     # Authentication service
@@ -224,6 +228,7 @@ chatbot/
 │       ├── document_service.py # Document service
 │       ├── chat_service.py    # Chat service
 │       ├── organization_service.py  # Organization service
+│       ├── statistics_service.py    # Statistics service
 │       ├── document_processor.py    # Document processing
 │       ├── rag_chain.py       # RAG implementation
 │       └── vector_store.py    # Vector store management
@@ -377,6 +382,14 @@ async def upload_document(
 Service instances are created per request:
 ```python
 document_service = DocumentService(db)
+```
+
+### 5. Custom Type Decorator Pattern
+Custom SQLAlchemy types for handling enum value mapping:
+```python
+class UserRoleType(TypeDecorator):
+    """Custom type to map database enum values to Python UserRole enum."""
+    # Handles case mismatches and legacy values without database migration
 ```
 
 ## Multi-Tenancy

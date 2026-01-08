@@ -639,6 +639,136 @@ POST /api/v1/admin/admins
 
 ---
 
+## Statistics API (`/api/v1/statistics`)
+
+### Get User Statistics
+```
+GET /api/v1/statistics/user
+```
+- **Access**: Authenticated users
+- **Returns**: `UserStatistics`
+  ```json
+  {
+    "total_documents": 5,
+    "total_conversations": 10,
+    "total_chats": 25,
+    "total_tokens_used": 15000,
+    "chats_today": 2,
+    "chats_remaining_today": 1,
+    "chat_limit": 3,
+    "documents_by_category": {
+      "hr": 2,
+      "general": 3
+    },
+    "recent_activity": [
+      {
+        "type": "document_upload",
+        "description": "Uploaded document: policy.pdf",
+        "timestamp": "2024-01-15T10:30:00",
+        "document_id": 1,
+        "document_name": "policy.pdf"
+      }
+    ]
+  }
+  ```
+- **Notes**: Returns statistics for the current authenticated user
+
+### Get Organization Statistics
+```
+GET /api/v1/statistics/organization/{organization_id}
+```
+- **Access**: 
+  - OrgAdmin/OrgUser: Can view their own organization
+  - Admin/SuperAdmin: Can view any organization
+- **Returns**: `OrganizationStatistics`
+  ```json
+  {
+    "organization_id": 1,
+    "organization_name": "Acme Corp",
+    "total_users": 50,
+    "total_documents": 100,
+    "total_conversations": 200,
+    "total_chats": 500,
+    "total_tokens_used": 500000,
+    "active_users": 45,
+    "documents_by_category": {
+      "hr": 30,
+      "sales": 40,
+      "legal": 20,
+      "general": 10
+    },
+    "users_by_role": {
+      "org_admin": 2,
+      "org_user": 48
+    },
+    "recent_activity": [
+      {
+        "type": "document_upload",
+        "description": "john_doe uploaded: handbook.pdf",
+        "timestamp": "2024-01-15T10:30:00",
+        "user_id": 5,
+        "user_name": "john_doe",
+        "document_id": 1,
+        "document_name": "handbook.pdf"
+      }
+    ]
+  }
+  ```
+
+### Get Admin Statistics
+```
+GET /api/v1/statistics/admin
+```
+- **Access**: Admin, SuperAdmin only
+- **Returns**: `AdminStatistics`
+  ```json
+  {
+    "total_organizations": 10,
+    "total_users": 500,
+    "total_documents": 1000,
+    "total_conversations": 2000,
+    "total_chats": 5000,
+    "total_tokens_used": 5000000,
+    "active_organizations": 9,
+    "active_users": 450,
+    "users_by_role": {
+      "super_admin": 1,
+      "admin": 5,
+      "org_admin": 20,
+      "org_user": 450,
+      "user": 24
+    },
+    "documents_by_category": {
+      "hr": 300,
+      "sales": 400,
+      "legal": 200,
+      "ops": 50,
+      "general": 50
+    },
+    "organizations_stats": [
+      {
+        "organization_id": 1,
+        "organization_name": "Acme Corp",
+        "total_users": 50,
+        "total_documents": 100,
+        ...
+      }
+    ],
+    "recent_activity": [
+      {
+        "type": "organization_created",
+        "description": "New organization created: Tech Corp",
+        "timestamp": "2024-01-15T10:30:00",
+        "organization_id": 2,
+        "organization_name": "Tech Corp"
+      }
+    ]
+  }
+  ```
+- **Notes**: Returns system-wide statistics including per-organization breakdown
+
+---
+
 ## Error Responses
 
 All endpoints return standard HTTP status codes:
