@@ -2,6 +2,7 @@
 from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel
+from app.models.document import DocumentCategory
 
 
 class DocumentInfo(BaseModel):
@@ -9,6 +10,9 @@ class DocumentInfo(BaseModel):
     id: int
     filename: str
     file_type: str
+    organization_id: int
+    category: Optional[DocumentCategory] = None
+    version: int
     upload_date: datetime
     file_size: Optional[int]
     chunk_count: int

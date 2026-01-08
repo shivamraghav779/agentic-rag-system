@@ -1,6 +1,8 @@
 """User-related Pydantic schemas."""
 from datetime import datetime
+from typing import Optional
 from pydantic import BaseModel, EmailStr
+from app.models.user import UserRole
 
 
 class UserSignup(BaseModel):
@@ -35,6 +37,8 @@ class UserResponse(BaseModel):
     email: str
     is_active: bool
     is_admin: bool
+    role: UserRole
+    organization_id: Optional[int] = None
     chat_limit: int
     system_prompt: str | None = None
     used_tokens: int
@@ -42,6 +46,27 @@ class UserResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class UserCreate(BaseModel):
+    """User creation model with multi-tenancy."""
+    username: str
+    email: EmailStr
+    password: str
+    role: UserRole = UserRole.USER
+    organization_id: Optional[int] = None
+    chat_limit: int = 3
+
+
+class UserUpdate(BaseModel):
+    """User update model."""
+    username: Optional[str] = None
+    email: Optional[EmailStr] = None
+    is_active: Optional[bool] = None
+    role: Optional[UserRole] = None
+    organization_id: Optional[int] = None
+    chat_limit: Optional[int] = None
+    system_prompt: Optional[str] = None
 
 
 class PasswordUpdate(BaseModel):

@@ -1,7 +1,20 @@
-"""Business logic services."""
+"""Service layer for business logic."""
+from app.services.auth_service import AuthService
+from app.services.user_service import UserService
+from app.services.document_service import DocumentService
+from app.services.chat_service import ChatService
+from app.services.organization_service import OrganizationService
 from app.services.document_processor import DocumentProcessor
-from app.services.vector_store import VectorStoreManager
 from app.services.rag_chain import RAGChain
+from app.services.vector_store import VectorStoreManager
 
-__all__ = ["DocumentProcessor", "VectorStoreManager", "RAGChain"]
-
+__all__ = [
+    "AuthService",
+    "UserService",
+    "DocumentService",
+    "ChatService",
+    "OrganizationService",
+    "DocumentProcessor",
+    "RAGChain",
+    "VectorStoreManager",
+]

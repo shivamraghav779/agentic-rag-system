@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import decode_access_token
 from app.db.session import get_db
-from app.models.user import User
+from app.models.user import User, UserRole
 
 # HTTP Bearer scheme for token authentication
 oauth2_scheme = HTTPBearer()
@@ -57,14 +57,52 @@ async def get_current_active_user(
     return current_user
 
 
+async def get_current_super_admin(
+    current_user: User = Depends(get_current_user)
+) -> User:
+    """Get the current super admin user."""
+    if not current_user.has_role(UserRole.SUPER_ADMIN):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Super admin access required"
+        )
+    return current_user
+
+
+async def get_current_admin(
+    current_user: User = Depends(get_current_user)
+) -> User:
+    """Get the current admin user (SuperAdmin or Admin)."""
+    if not current_user.has_role(UserRole.SUPER_ADMIN, UserRole.ADMIN):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    return current_user
+
+
+async def get_current_org_admin(
+    current_user: User = Depends(get_current_user)
+) -> User:
+    """Get the current organization admin user."""
+    if not current_user.has_role(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.ORG_ADMIN):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Organization admin access required"
+        )
+    return current_user
+
+
+
+
+# Legacy function for backward compatibility
 async def get_current_admin_user(
     current_user: User = Depends(get_current_user)
 ) -> User:
-    """Get the current admin user."""
-    if not current_user.is_admin:
+    """Get the current admin user (legacy - for backward compatibility)."""
+    if not current_user.has_role(UserRole.SUPER_ADMIN, UserRole.ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions. Admin access required."
         )
     return current_user
-

@@ -1,17 +1,29 @@
 """Document model."""
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Enum
 from sqlalchemy.orm import relationship
 from datetime import datetime
+import enum
 
 from app.db.base import Base
 
 
+class DocumentCategory(str, enum.Enum):
+    """Document category enumeration."""
+    HR = "hr"
+    SALES = "sales"
+    LEGAL = "legal"
+    OPS = "ops"
+    GENERAL = "general"
+
+
 class Document(Base):
-    """Document metadata model."""
+    """Document metadata model with multi-tenancy support."""
     __tablename__ = "documents"
     
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)  # Uploader
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
+    
     filename = Column(String(500), nullable=False, index=True)
     file_type = Column(String(50), nullable=False)  # pdf, docx, txt, html
     file_path = Column(String(1000), nullable=False)
@@ -19,10 +31,12 @@ class Document(Base):
     upload_date = Column(DateTime, default=datetime.utcnow)
     file_size = Column(Integer)  # Size in bytes
     chunk_count = Column(Integer, default=0)
+    category = Column(Enum(DocumentCategory), default=DocumentCategory.GENERAL, nullable=True, index=True)
+    version = Column(Integer, default=1)  # Version control for updated documents
     extra_metadata = Column(Text)  # JSON string for additional metadata
     
     # Relationships
     owner = relationship("User", back_populates="documents")
+    organization = relationship("Organization", back_populates="documents")
     conversations = relationship("Conversation", back_populates="document", cascade="all, delete-orphan")
     chat_history = relationship("ChatHistory", back_populates="document", cascade="all, delete-orphan")
-

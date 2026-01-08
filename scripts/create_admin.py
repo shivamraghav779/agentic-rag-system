@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Script to create an admin user in the database."""
+"""Script to create a super admin user in the database."""
 import sys
 import getpass
 from pathlib import Path
@@ -9,28 +9,28 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.core.security import get_password_hash
 
 
-def create_admin_user(
+def create_super_admin_user(
     username: str,
     email: str,
     password: str,
-    chat_limit: int = 100,
+    chat_limit: int = 500,
     is_active: bool = True
 ) -> bool:
-    """Create an admin user in the database.
+    """Create a super admin user in the database.
     
     Args:
-        username: Username for the admin
-        email: Email for the admin
+        username: Username for the super admin
+        email: Email for the super admin
         password: Plain text password (will be hashed)
-        chat_limit: Chat limit for the admin (default: 100)
-        is_active: Whether the admin account is active (default: True)
+        chat_limit: Chat limit for the super admin (default: 500)
+        is_active: Whether the super admin account is active (default: True)
         
     Returns:
-        True if admin was created successfully, False otherwise
+        True if super admin was created successfully, False otherwise
     """
     db: Session = SessionLocal()
     try:
@@ -38,18 +38,19 @@ def create_admin_user(
         existing_user = db.query(User).filter(User.email == email).first()
         if existing_user:
             print(f"❌ Error: User with email '{email}' already exists.")
-            if existing_user.is_admin:
-                print(f"   This user is already an admin.")
+            if existing_user.role == UserRole.SUPER_ADMIN:
+                print(f"   This user is already a super admin.")
             else:
-                print(f"   Would you like to make this user an admin? (y/n): ", end="")
+                print(f"   Would you like to make this user a super admin? (y/n): ", end="")
                 response = input().strip().lower()
                 if response == 'y':
-                    existing_user.is_admin = True
+                    existing_user.role = UserRole.SUPER_ADMIN
+                    existing_user.is_admin = True  # Legacy flag
                     existing_user.is_active = is_active
                     if chat_limit:
                         existing_user.chat_limit = chat_limit
                     db.commit()
-                    print(f"✅ User '{username}' is now an admin.")
+                    print(f"✅ User '{username}' is now a super admin.")
                     return True
             return False
         
@@ -62,42 +63,44 @@ def create_admin_user(
         # Hash the password
         hashed_password = get_password_hash(password)
         
-        # Create admin user
-        admin_user = User(
+        # Create super admin user
+        super_admin_user = User(
             username=username,
             email=email,
             hashed_password=hashed_password,
-            is_admin=True,
+            role=UserRole.SUPER_ADMIN,
+            is_admin=True,  # Legacy flag for backward compatibility
             is_active=is_active,
             chat_limit=chat_limit
         )
         
-        db.add(admin_user)
+        db.add(super_admin_user)
         db.commit()
-        db.refresh(admin_user)
+        db.refresh(super_admin_user)
         
-        print(f"✅ Admin user created successfully!")
-        print(f"   Username: {admin_user.username}")
-        print(f"   Email: {admin_user.email}")
-        print(f"   Admin: {admin_user.is_admin}")
-        print(f"   Active: {admin_user.is_active}")
-        print(f"   Chat Limit: {admin_user.chat_limit}")
-        print(f"   ID: {admin_user.id}")
+        print(f"✅ Super admin user created successfully!")
+        print(f"   Username: {super_admin_user.username}")
+        print(f"   Email: {super_admin_user.email}")
+        print(f"   Role: {super_admin_user.role.value}")
+        print(f"   Admin: {super_admin_user.is_admin}")
+        print(f"   Active: {super_admin_user.is_active}")
+        print(f"   Chat Limit: {super_admin_user.chat_limit}")
+        print(f"   ID: {super_admin_user.id}")
         
         return True
         
     except Exception as e:
         db.rollback()
-        print(f"❌ Error creating admin user: {str(e)}")
+        print(f"❌ Error creating super admin user: {str(e)}")
         return False
     finally:
         db.close()
 
 
 def main():
-    """Main function to interactively create an admin user."""
+    """Main function to interactively create a super admin user."""
     print("=" * 60)
-    print("Create Admin User")
+    print("Create Super Admin User")
     print("=" * 60)
     print()
     
@@ -131,30 +134,30 @@ def main():
         sys.exit(1)
     
     # Get chat limit (optional)
-    chat_limit_input = input("Enter chat limit (default: 100, press Enter to use default): ").strip()
+    chat_limit_input = input("Enter chat limit (default: 500, press Enter to use default): ").strip()
     chat_limit = 500  # Default
     if chat_limit_input:
         try:
             chat_limit = int(chat_limit_input)
             if chat_limit < 1:
-                print("⚠️  Warning: Chat limit must be at least 1. Using default value 100.")
-                chat_limit = 100
+                print("⚠️  Warning: Chat limit must be at least 1. Using default value 500.")
+                chat_limit = 500
         except ValueError:
-            print("⚠️  Warning: Invalid chat limit. Using default value 100.")
-            chat_limit = 100
+            print("⚠️  Warning: Invalid chat limit. Using default value 500.")
+            chat_limit = 500
     
     # Get active status (optional)
-    is_active_input = input("Should the admin account be active? (y/n, default: y): ").strip().lower()
+    is_active_input = input("Should the super admin account be active? (y/n, default: y): ").strip().lower()
     is_active = True  # Default
     if is_active_input and is_active_input != 'y':
         is_active = False
     
     print()
-    print("Creating admin user...")
+    print("Creating super admin user...")
     print()
     
-    # Create admin user
-    success = create_admin_user(
+    # Create super admin user
+    success = create_super_admin_user(
         username=username,
         email=email,
         password=password,
@@ -165,13 +168,13 @@ def main():
     if success:
         print()
         print("=" * 60)
-        print("✅ Admin user created successfully!")
+        print("✅ Super admin user created successfully!")
         print("=" * 60)
         sys.exit(0)
     else:
         print()
         print("=" * 60)
-        print("❌ Failed to create admin user.")
+        print("❌ Failed to create super admin user.")
         print("=" * 60)
         sys.exit(1)
 

@@ -1,0 +1,507 @@
+"""Chat service layer."""
+from datetime import datetime
+from typing import List, Optional
+from fastapi import HTTPException, status
+from sqlalchemy.orm import Session
+
+from app.crud.document import document as document_crud
+from app.crud.conversation import conversation as conversation_crud
+from app.crud.chat_history import chat_history as chat_history_crud
+from app.models.document import Document
+from app.models.user import User
+from app.models.conversation import Conversation
+from app.models.chat_history import ChatHistory
+from app.schemas.chat import (
+    ChatRequest,
+    ChatResponse,
+    ConversationCreate,
+    ConversationUpdate
+)
+from app.services.rag_chain import RAGChain
+
+
+class ChatService:
+    """Service for chat operations."""
+    
+    def __init__(self, db: Session):
+        """Initialize chat service with database session."""
+        self.db = db
+        self.document_crud = document_crud
+        self.conversation_crud = conversation_crud
+        self.chat_history_crud = chat_history_crud
+        self.rag_chain = RAGChain()
+    
+    def check_rate_limit(self, user: User) -> bool:
+        """
+        Check if user has remaining chat requests.
+        
+        Args:
+            user: Current user
+            
+        Returns:
+            True if user has remaining chats, False otherwise
+        """
+        today_count = self.chat_history_crud.count_today(self.db, user_id=user.id)
+        return today_count < user.chat_limit
+    
+    def chat_with_document(self, request: ChatRequest, user: User) -> ChatResponse:
+        """
+        Chat with a document using RAG.
+        
+        Args:
+            request: Chat request with question and document ID
+            user: Current user
+            
+        Returns:
+            Chat response with answer and sources
+            
+        Raises:
+            HTTPException: If access denied, rate limited, or processing fails
+        """
+        # Validate user can chat
+        if not user.is_organization_user():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Private users cannot chat with documents. You must be part of an organization."
+            )
+        
+        # Check rate limit
+        if not self.check_rate_limit(user):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Rate limit exceeded. You have {user.chat_limit} chats per day."
+            )
+        
+        # Get and validate document
+        document = self.document_crud.get(self.db, id=request.document_id)
+        if not document:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Document not found"
+            )
+        
+        if not self.document_crud.can_access(document, user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this document"
+            )
+        
+        # Validate question
+        if not request.question.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Question cannot be empty"
+            )
+        
+        try:
+            # Get or create conversation
+            conversation = self._get_or_create_conversation(
+                user=user,
+                document=document,
+                conversation_id=request.conversation_id
+            )
+            
+            # Generate title if needed
+            if not conversation.title:
+                conversation.title = self._generate_conversation_title(request.question)
+                self.db.flush()
+            
+            # Get conversation history
+            conversation_history = self._get_conversation_history(conversation.id)
+            
+            # Query RAG chain
+            result = self.rag_chain.query(
+                document.vector_store_path,
+                request.question,
+                system_prompt=user.system_prompt,
+                conversation_history=conversation_history
+            )
+            
+            # Extract token counts
+            prompt_tokens = result.get("prompt_tokens", 0)
+            completion_tokens = result.get("completion_tokens", 0)
+            total_tokens = prompt_tokens + completion_tokens
+            
+            # Save chat history
+            chat_history_dict = {
+                "conversation_id": conversation.id,
+                "user_id": user.id,
+                "document_id": document.id,
+                "question": request.question,
+                "answer": result["answer"],
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens
+            }
+            self.chat_history_crud.create_from_dict(self.db, obj_dict=chat_history_dict)
+            
+            # Update user's used tokens
+            user.used_tokens = (user.used_tokens or 0) + total_tokens
+            
+            # Update conversation timestamp
+            conversation.updated_at = datetime.utcnow()
+            
+            self.db.commit()
+            self.db.refresh(conversation)
+            self.db.refresh(user)
+            
+            return ChatResponse(
+                answer=result["answer"],
+                source_documents=result["source_documents"],
+                conversation_id=conversation.id
+            )
+        
+        except HTTPException:
+            raise
+        except Exception as e:
+            self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error processing chat request: {str(e)}"
+            )
+    
+    def get_chat_history(
+        self,
+        user: User,
+        document_id: Optional[int] = None,
+        conversation_id: Optional[int] = None
+    ) -> List[ChatHistory]:
+        """
+        Get chat history for user.
+        
+        Args:
+            user: Current user
+            document_id: Optional document filter
+            conversation_id: Optional conversation filter
+            
+        Returns:
+            List of chat history entries
+        """
+        # Validate user can access history
+        if not user.is_organization_user():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Private users cannot access chat history. You must be part of an organization."
+            )
+        
+        if conversation_id:
+            # Verify conversation access
+            conv = self.conversation_crud.get(self.db, id=conversation_id)
+            if not conv or conv.user_id != user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Conversation not found"
+                )
+            # Verify document access
+            doc = self.document_crud.get(self.db, id=conv.document_id)
+            if doc and not self.document_crud.can_access(doc, user):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied to this conversation"
+                )
+        
+        elif document_id:
+            # Verify document access
+            doc = self.document_crud.get(self.db, id=document_id)
+            if not doc:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Document not found"
+                )
+            if not self.document_crud.can_access(doc, user):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied to this document"
+                )
+        
+        return self.chat_history_crud.get_by_user(
+            self.db,
+            user_id=user.id,
+            document_id=document_id,
+            conversation_id=conversation_id
+        )
+    
+    def get_chat_by_id(self, chat_id: int, user: User) -> ChatHistory:
+        """
+        Get a specific chat history entry.
+        
+        Args:
+            chat_id: Chat history ID
+            user: Current user
+            
+        Returns:
+            Chat history entry
+        """
+        # Validate user can access
+        if not user.is_organization_user():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Private users cannot access chat history. You must be part of an organization."
+            )
+        
+        chat = self.chat_history_crud.get(self.db, id=chat_id)
+        if not chat or chat.user_id != user.id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Chat history not found"
+            )
+        
+        # Verify document access
+        doc = self.document_crud.get(self.db, id=chat.document_id)
+        if doc and not self.document_crud.can_access(doc, user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this chat history"
+            )
+        
+        return chat
+    
+    def create_conversation(self, conversation_data: ConversationCreate, user: User) -> Conversation:
+        """
+        Create a new conversation.
+        
+        Args:
+            conversation_data: Conversation creation data
+            user: Current user
+            
+        Returns:
+            Created conversation
+        """
+        # Validate user can create conversations
+        if not user.is_organization_user():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Private users cannot create conversations. You must be part of an organization."
+            )
+        
+        # Verify document access
+        document = self.document_crud.get(self.db, id=conversation_data.document_id)
+        if not document:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Document not found"
+            )
+        
+        if not self.document_crud.can_access(document, user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this document"
+            )
+        
+        conversation_dict = {
+            "user_id": user.id,
+            "document_id": conversation_data.document_id,
+            "title": conversation_data.title
+        }
+        
+        return self.conversation_crud.create_from_dict(self.db, obj_dict=conversation_dict)
+    
+    def get_conversations(
+        self,
+        user: User,
+        document_id: Optional[int] = None
+    ) -> List[Conversation]:
+        """
+        Get conversations for user.
+        
+        Args:
+            user: Current user
+            document_id: Optional document filter
+            
+        Returns:
+            List of conversations
+        """
+        # Validate user can access conversations
+        if not user.is_organization_user():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Private users cannot access conversations. You must be part of an organization."
+            )
+        
+        if document_id:
+            # Verify document access
+            document = self.document_crud.get(self.db, id=document_id)
+            if not document:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Document not found"
+                )
+            if not self.document_crud.can_access(document, user):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied to this document"
+                )
+        
+        return self.conversation_crud.get_by_user(
+            self.db,
+            user_id=user.id,
+            document_id=document_id
+        )
+    
+    def get_conversation_by_id(self, conversation_id: int, user: User) -> Conversation:
+        """
+        Get a specific conversation.
+        
+        Args:
+            conversation_id: Conversation ID
+            user: Current user
+            
+        Returns:
+            Conversation
+        """
+        # Validate user can access
+        if not user.is_organization_user():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Private users cannot access conversations. You must be part of an organization."
+            )
+        
+        conversation = self.conversation_crud.get(self.db, id=conversation_id)
+        if not conversation or conversation.user_id != user.id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found"
+            )
+        
+        # Verify document access
+        doc = self.document_crud.get(self.db, id=conversation.document_id)
+        if doc and not self.document_crud.can_access(doc, user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this conversation"
+            )
+        
+        return conversation
+    
+    def update_conversation(
+        self,
+        conversation_id: int,
+        conversation_data: ConversationUpdate,
+        user: User
+    ) -> Conversation:
+        """
+        Update a conversation.
+        
+        Args:
+            conversation_id: Conversation ID
+            conversation_data: Update data
+            user: Current user
+            
+        Returns:
+            Updated conversation
+        """
+        # Validate user can update
+        if not user.is_organization_user():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Private users cannot update conversations. You must be part of an organization."
+            )
+        
+        conversation = self.conversation_crud.get(self.db, id=conversation_id)
+        if not conversation or conversation.user_id != user.id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found"
+            )
+        
+        # Verify document access
+        doc = self.document_crud.get(self.db, id=conversation.document_id)
+        if doc and not self.document_crud.can_access(doc, user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this conversation"
+            )
+        
+        if conversation_data.title is not None:
+            conversation.title = conversation_data.title
+            conversation.updated_at = datetime.utcnow()
+        
+        self.db.commit()
+        self.db.refresh(conversation)
+        
+        return conversation
+    
+    def delete_conversation(self, conversation_id: int, user: User) -> None:
+        """
+        Delete a conversation.
+        
+        Args:
+            conversation_id: Conversation ID
+            user: Current user
+        """
+        # Validate user can delete
+        if not user.is_organization_user():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Private users cannot delete conversations. You must be part of an organization."
+            )
+        
+        conversation = self.conversation_crud.get(self.db, id=conversation_id)
+        if not conversation or conversation.user_id != user.id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found"
+            )
+        
+        # Verify document access
+        doc = self.document_crud.get(self.db, id=conversation.document_id)
+        if doc and not self.document_crud.can_access(doc, user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this conversation"
+            )
+        
+        self.conversation_crud.delete(self.db, id=conversation_id)
+    
+    def _get_or_create_conversation(
+        self,
+        user: User,
+        document: Document,
+        conversation_id: Optional[int] = None
+    ) -> Conversation:
+        """Get existing conversation or create new one."""
+        if conversation_id:
+            conversation = self.conversation_crud.get_by_user_and_document(
+                self.db,
+                user_id=user.id,
+                document_id=document.id,
+                conversation_id=conversation_id
+            )
+            if not conversation:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Conversation not found or does not belong to this document"
+                )
+            return conversation
+        else:
+            # Create new conversation
+            conversation_dict = {
+                "user_id": user.id,
+                "document_id": document.id,
+                "title": None
+            }
+            conversation = self.conversation_crud.create_from_dict(self.db, obj_dict=conversation_dict)
+            self.db.flush()
+            return conversation
+    
+    def _generate_conversation_title(self, question: str) -> str:
+        """Generate conversation title from first question."""
+        try:
+            return self.rag_chain.generate_conversation_title(question)
+        except Exception:
+            # Fallback to truncated question
+            return question[:100] if len(question) > 100 else question
+    
+    def _get_conversation_history(self, conversation_id: int) -> List[dict]:
+        """Get last 5 chat history entries for conversation context."""
+        recent_chats = self.chat_history_crud.get_by_conversation(
+            self.db,
+            conversation_id=conversation_id,
+            limit=5
+        )
+        
+        # Reverse to get chronological order (oldest first)
+        return [
+            {"question": chat.question, "answer": chat.answer}
+            for chat in reversed(recent_chats)
+        ]
+

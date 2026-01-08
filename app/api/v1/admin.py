@@ -1,87 +1,79 @@
-"""Admin API routes for user management."""
+"""Admin API routes for SuperAdmin and Admin specific operations."""
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status, Query
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models.user import User
-from app.api.deps import get_current_admin_user
-from app.schemas.user import UserResponse, ChatLimitUpdate
+from app.models.user import User, UserRole
+from app.api.deps import get_current_super_admin, get_current_admin
+from app.schemas.user import UserResponse, UserCreate
+from app.services.user_service import UserService
 
 router = APIRouter()
 
 
-@router.get("/users", response_model=List[UserResponse])
-async def list_users(
+# SuperAdmin specific endpoints
+
+@router.get("/superadmins", response_model=List[UserResponse])
+async def list_superadmins(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_super_admin)
 ):
-    """List all users (admin only)."""
-    users = db.query(User).order_by(User.created_at.desc()).all()
-    return users
+    """List all SuperAdmin users (SuperAdmin only)."""
+    user_service = UserService(db)
+    return user_service.list_users(
+        current_user=current_user,
+        role=UserRole.SUPER_ADMIN,
+        skip=skip,
+        limit=limit
+    )
 
 
-@router.get("/users/{user_id}", response_model=UserResponse)
-async def get_user(
-    user_id: int,
+@router.post("/superadmins", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+async def create_superadmin(
+    user_data: UserCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_super_admin)
 ):
-    """Get user information (admin only)."""
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-    return user
+    """Create a SuperAdmin user (SuperAdmin only)."""
+    # Force role to SUPER_ADMIN and ensure no organization
+    user_data.role = UserRole.SUPER_ADMIN
+    user_data.organization_id = None
+    
+    user_service = UserService(db)
+    return user_service.create_user(user_data=user_data, current_user=current_user)
 
 
-@router.patch("/users/{user_id}/chat-limit", response_model=UserResponse)
-async def update_user_chat_limit(
-    user_id: int,
-    limit_data: ChatLimitUpdate,
+# Admin specific endpoints
+
+@router.get("/admins", response_model=List[UserResponse])
+async def list_admins(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_admin)
 ):
-    """Update a user's chat limit (admin only)."""
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-    
-    if limit_data.chat_limit < 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Chat limit must be non-negative"
-        )
-    
-    user.chat_limit = limit_data.chat_limit
-    db.commit()
-    db.refresh(user)
-    
-    return user
+    """List all Admin users (Admin or SuperAdmin only)."""
+    user_service = UserService(db)
+    return user_service.list_users(
+        current_user=current_user,
+        role=UserRole.ADMIN,
+        skip=skip,
+        limit=limit
+    )
 
 
-@router.patch("/users/{user_id}/activate", response_model=UserResponse)
-async def toggle_user_active(
-    user_id: int,
+@router.post("/admins", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+async def create_admin(
+    user_data: UserCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_super_admin)
 ):
-    """Toggle user active status (admin only)."""
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
+    """Create an Admin user (SuperAdmin only)."""
+    # Force role to ADMIN
+    user_data.role = UserRole.ADMIN
     
-    user.is_active = not user.is_active
-    db.commit()
-    db.refresh(user)
-    
-    return user
-
+    user_service = UserService(db)
+    return user_service.create_user(user_data=user_data, current_user=current_user)
