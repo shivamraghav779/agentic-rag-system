@@ -2,86 +2,160 @@
 
 ## Overview
 
-The system now supports a hierarchical multi-tenancy structure:
+The system supports a hierarchical multi-tenancy structure with role-based access control:
 
 ```
 SuperAdmin
   └── Admins
       └── Organizations
-          ├── Organization Admins
-          └── SubOrganizations
-              ├── SubOrgAdmins
-              └── Users
+          ├── Organization Admins (ORG_ADMIN)
+          └── Organization Users (ORG_USER)
 ```
+
+**Note**: Sub-organizations have been removed. Users are now directly associated with organizations.
 
 ## Role Hierarchy
 
-### 1. SuperAdmin
+### 1. SuperAdmin (SUPER_ADMIN)
 - **Access**: Full system access
+- **Organization**: Not associated with any organization (`organization_id = null`)
 - **Can**: 
   - Manage all organizations
   - Create/delete organizations
+  - Create SuperAdmin and Admin users
   - Manage all users
-  - Access all documents
+  - Access all documents and chats
+  - Delete any user
 
-### 2. Admin
+### 2. Admin (ADMIN)
 - **Access**: Can manage organizations
+- **Organization**: May or may not be associated with an organization
 - **Can**:
   - Create/update/delete organizations
-  - Manage users within organizations
-  - Access all documents
+  - Manage users (except SuperAdmin and Admin)
+  - Create ORG_ADMIN, ORG_USER, and USER (private) roles
+  - Access all documents and chats
+- **Cannot**:
+  - Create/modify SuperAdmin or Admin users
+  - Delete users
 
 ### 3. Organization Admin (ORG_ADMIN)
 - **Access**: Manages a specific organization
+- **Organization**: Must be associated with an organization (`organization_id` required)
 - **Can**:
-  - Manage sub-organizations within their organization
-  - Manage users in their organization
+  - Manage users in their organization (can only create ORG_USER)
   - Upload/manage documents in their organization
-  - Access all documents in their organization
-
-### 4. Sub-Organization Admin (SUB_ORG_ADMIN)
-- **Access**: Manages a specific sub-organization
-- **Can**:
-  - Manage users in their sub-organization
-  - Upload/manage documents in their sub-organization
-  - Access documents in their sub-organization
-
-### 5. User
-- **Access**: Regular user
-- **Can**:
-  - Access documents in their organization
   - Chat with documents in their organization
-  - View their own conversations
+  - Access all documents in their organization
+- **Cannot**:
+  - Create ORG_ADMIN, ADMIN, or SUPER_ADMIN users
+  - Access other organizations
+  - Manage users outside their organization
+
+### 4. Organization User (ORG_USER)
+- **Access**: Regular user within an organization
+- **Organization**: Must be associated with an organization (`organization_id` required)
+- **Can**:
+  - Upload/view documents in their organization
+  - Chat with documents in their organization
+  - View their own conversations and chat history
+- **Cannot**:
+  - Manage other users
+  - Access other organizations
+  - Manage documents (only upload and view)
+
+### 5. Private User (USER)
+- **Access**: Private user, not in any organization
+- **Organization**: Not associated with any organization (`organization_id = null`)
+- **Can**:
+  - View and update their own profile
+  - Update their system prompt
+  - Sign up and login
+- **Cannot**:
+  - Upload documents
+  - Chat with documents
+  - Access any organization resources
+  - Manage other users
 
 ## Database Schema
 
 ### Organizations Table
 - `id`: Primary key
-- `name`: Organization name
-- `slug`: URL-friendly identifier (unique)
+- `name`: Organization name (required, indexed)
 - `description`: Optional description
-- `is_active`: Active status
-- `created_at`, `updated_at`: Timestamps
-
-### Sub-Organizations Table
-- `id`: Primary key
-- `organization_id`: Foreign key to organizations
-- `name`: Sub-organization name
-- `slug`: URL-friendly identifier (unique within organization)
-- `description`: Optional description
-- `is_active`: Active status
+- `is_active`: Active status (default: true)
 - `created_at`, `updated_at`: Timestamps
 
 ### Users Table (Updated)
-- `role`: Enum (SUPER_ADMIN, ADMIN, ORG_ADMIN, SUB_ORG_ADMIN, USER)
+- `id`: Primary key
+- `username`: Unique username (required, indexed)
+- `email`: Unique email (required, indexed)
+- `hashed_password`: Argon2 hashed password
+- `is_active`: Active status (default: true)
+- `role`: Enum (SUPER_ADMIN, ADMIN, ORG_ADMIN, ORG_USER, USER) - default: USER
 - `organization_id`: Foreign key to organizations (nullable)
-- `sub_organization_id`: Foreign key to sub_organizations (nullable)
+  - Required for ORG_ADMIN and ORG_USER
+  - Must be null for USER (private) and SUPER_ADMIN
+  - Optional for ADMIN
+- `chat_limit`: Daily chat limit (default: 3)
+- `system_prompt`: Custom system prompt for AI (nullable)
+- `used_tokens`: Total tokens used (default: 0)
+- `is_admin`: Legacy flag (deprecated, use role instead)
+- `created_at`: Timestamp
 
 ### Documents Table (Updated)
+- `id`: Primary key
+- `user_id`: Foreign key to users (uploader)
 - `organization_id`: Foreign key to organizations (required)
-- `sub_organization_id`: Foreign key to sub_organizations (optional)
-- `category`: Enum (HR, SALES, LEGAL, OPS, GENERAL)
-- `version`: Integer for version control
+- `filename`: Original filename
+- `file_type`: File type (pdf, docx, txt, html)
+- `file_path`: Path to uploaded file
+- `vector_store_path`: Path to FAISS vector store
+- `upload_date`: Upload timestamp
+- `file_size`: Size in bytes
+- `chunk_count`: Number of text chunks
+- `category`: Enum (HR, SALES, LEGAL, OPS, GENERAL) - default: GENERAL
+- `version`: Version number (default: 1)
+- `extra_metadata`: JSON string for additional metadata
+
+### Conversations Table
+- `id`: Primary key
+- `user_id`: Foreign key to users
+- `document_id`: Foreign key to documents
+- `title`: Conversation title (auto-generated from first question)
+- `created_at`, `updated_at`: Timestamps
+
+### ChatHistory Table
+- `id`: Primary key
+- `conversation_id`: Foreign key to conversations
+- `user_id`: Foreign key to users
+- `document_id`: Foreign key to documents
+- `question`: User's question
+- `answer`: AI's response
+- `prompt_tokens`: Tokens used in prompt
+- `completion_tokens`: Tokens used in completion
+- `created_at`: Timestamp
+
+## Access Control Logic
+
+### User.can_access_organization(org_id)
+```python
+- SUPER_ADMIN: Always True
+- ADMIN: Always True
+- ORG_ADMIN: True if organization_id == org_id
+- ORG_USER: True if organization_id == org_id
+- USER (private): Always False
+```
+
+### User.is_organization_user()
+```python
+- Returns True if role is ORG_ADMIN or ORG_USER and organization_id is not None
+```
+
+### User.is_private_user()
+```python
+- Returns True if role is USER and organization_id is None
+```
 
 ## API Endpoints
 
@@ -92,8 +166,9 @@ SuperAdmin
 POST /api/v1/organizations
 ```
 - **Access**: SuperAdmin, Admin
-- **Body**: `OrganizationCreate`
+- **Body**: `OrganizationCreate` (includes `admin_user` credentials)
 - **Returns**: `OrganizationResponse`
+- **Notes**: Automatically creates an ORG_ADMIN user for the organization
 
 #### List Organizations
 ```
@@ -101,13 +176,17 @@ GET /api/v1/organizations?skip=0&limit=100
 ```
 - **Access**: All authenticated users (filtered by role)
 - **Returns**: `List[OrganizationResponse]`
+- **Access Control**:
+  - SuperAdmin/Admin: See all organizations
+  - OrgAdmin/OrgUser: See only their organization
+  - Private User: See no organizations
 
 #### Get Organization
 ```
 GET /api/v1/organizations/{organization_id}
 ```
 - **Access**: Users with access to the organization
-- **Returns**: `OrganizationWithSubOrgs`
+- **Returns**: `OrganizationResponse`
 
 #### Update Organization
 ```
@@ -124,75 +203,59 @@ DELETE /api/v1/organizations/{organization_id}
 - **Access**: SuperAdmin only
 - **Returns**: 204 No Content
 
-### Sub-Organization Management
+### Organization User Management
 
-#### Create Sub-Organization
+#### List Organization Users
 ```
-POST /api/v1/organizations/{organization_id}/sub-organizations
-```
-- **Access**: Organization Admin, Admin, SuperAdmin
-- **Body**: `SubOrganizationCreate`
-- **Returns**: `SubOrganizationResponse`
-
-#### List Sub-Organizations
-```
-GET /api/v1/organizations/{organization_id}/sub-organizations
+GET /api/v1/organizations/{organization_id}/users?role=org_user&skip=0&limit=100
 ```
 - **Access**: Users with access to the organization
-- **Returns**: `List[SubOrganizationResponse]`
+- **Query Parameters**:
+  - `role` (optional): Filter by role (ORG_ADMIN, ORG_USER)
+  - `skip`, `limit`: Pagination
+- **Returns**: `List[UserResponse]`
 
-#### Get Sub-Organization
+#### Create Organization User
 ```
-GET /api/v1/organizations/{organization_id}/sub-organizations/{sub_org_id}
+POST /api/v1/organizations/{organization_id}/users
 ```
-- **Access**: Users with access to the sub-organization
-- **Returns**: `SubOrganizationResponse`
+- **Access**: OrgAdmin, Admin, SuperAdmin
+- **Body**: `UserCreate` (organization_id will be set automatically)
+- **Returns**: `UserResponse`
+- **Notes**: 
+  - OrgAdmins can only create ORG_USER role
+  - Only ORG_ADMIN and ORG_USER roles can be created in organizations
 
-#### Update Sub-Organization
-```
-PATCH /api/v1/organizations/{organization_id}/sub-organizations/{sub_org_id}
-```
-- **Access**: Organization Admin, Admin, SuperAdmin
-- **Body**: `SubOrganizationUpdate`
-- **Returns**: `SubOrganizationResponse`
-
-#### Delete Sub-Organization
-```
-DELETE /api/v1/organizations/{organization_id}/sub-organizations/{sub_org_id}
-```
-- **Access**: Organization Admin, Admin, SuperAdmin
-- **Returns**: 204 No Content
-
-### Document Management (Updated)
+### Document Management
 
 #### Upload Document
 ```
-POST /api/v1/documents/upload?organization_id=1&sub_organization_id=2&category=HR
+POST /api/v1/documents/upload?organization_id=1&category=HR
 ```
-- **Access**: Users with access to the organization
+- **Access**: Organization users (ORG_ADMIN, ORG_USER)
 - **Parameters**:
   - `organization_id` (optional): Defaults to user's organization
-  - `sub_organization_id` (optional): For sub-org scoped documents
   - `category` (optional): Document category (default: GENERAL)
-- **Body**: File upload
+- **Body**: File upload (PDF, DOCX, TXT, HTML)
 - **Returns**: `UploadResponse`
+- **Notes**: Private users cannot upload documents
 
 #### List Documents
 ```
-GET /api/v1/documents?organization_id=1&sub_organization_id=2&category=HR
+GET /api/v1/documents?organization_id=1&category=HR
 ```
-- **Access**: Users (filtered by organization access)
+- **Access**: Organization users (filtered by organization access)
 - **Parameters**:
   - `organization_id` (optional): Filter by organization
-  - `sub_organization_id` (optional): Filter by sub-organization
   - `category` (optional): Filter by category
 - **Returns**: `List[DocumentInfo]`
+- **Notes**: Private users cannot access documents
 
 #### Get Document
 ```
 GET /api/v1/documents/{document_id}
 ```
-- **Access**: Users with access to the document's organization
+- **Access**: Organization users with access to the document's organization
 - **Returns**: `DocumentInfo`
 
 #### Delete Document
@@ -201,39 +264,54 @@ DELETE /api/v1/documents/{document_id}
 ```
 - **Access**: 
   - Document owner
-  - Organization Admin (for documents in their org)
-  - Sub-Org Admin (for documents in their sub-org)
+  - OrgAdmin (for documents in their org)
   - Admin, SuperAdmin
 - **Returns**: 204 No Content
+- **Notes**: Private users cannot delete documents
 
-### Chat (Updated)
+### Chat Management
 
-All chat endpoints now verify organization access before allowing document queries.
+All chat endpoints verify organization access before allowing document queries.
 
-## Access Control Logic
+#### Chat with Document
+```
+POST /api/v1/chat
+```
+- **Access**: Organization users (ORG_ADMIN, ORG_USER)
+- **Body**: `ChatRequest` (document_id, question, optional conversation_id)
+- **Returns**: `ChatResponse` (answer, source_documents, conversation_id)
+- **Notes**: 
+  - Rate limited based on user's `chat_limit` (per day)
+  - Private users cannot chat with documents
 
-### User.can_access_organization(org_id)
-- SuperAdmin: Always true
-- Admin: Always true
-- OrgAdmin: True if `organization_id == org_id`
-- Others: False
-
-### User.can_access_sub_organization(sub_org_id)
-- SuperAdmin: Always true
-- Admin: Always true
-- OrgAdmin: True (checked in service layer with DB query)
-- SubOrgAdmin: True if `sub_organization_id == sub_org_id`
-- Others: False
+#### Get Chat History
+```
+GET /api/v1/chat/history?document_id=1&conversation_id=1
+```
+- **Access**: Organization users
+- **Returns**: `List[ChatHistoryResponse]`
+- **Notes**: Private users cannot access chat history
 
 ## Migration Notes
 
-The migration `31eb3f74e5a3_add_multi_tenancy_models.py`:
-1. Creates `organizations` and `sub_organizations` tables
-2. Adds `role`, `organization_id`, `sub_organization_id` to `users` table
-3. Adds `organization_id`, `sub_organization_id`, `category`, `version` to `documents` table
-4. Creates a default organization for existing data
-5. Sets default roles for existing users based on `is_admin` flag
-6. Assigns existing users to the default organization
+### Key Migrations
+
+1. **`31eb3f74e5a3_add_multi_tenancy_models.py`**:
+   - Creates `organizations` table
+   - Adds `role`, `organization_id` to `users` table
+   - Adds `organization_id`, `category`, `version` to `documents` table
+   - Creates a default organization for existing data
+   - Sets default roles for existing users
+
+2. **`0f5d49da2193_remove_sub_organizations.py`**:
+   - Removes `sub_organizations` table
+   - Removes `sub_organization_id` from `users` and `documents` tables
+   - Updates existing SUB_ORG_ADMIN users to USER role
+
+3. **`15f4e7f7e618_add_org_user_role_and_separate_private_users.py`**:
+   - Adds `ORG_USER` role to enum
+   - Updates existing USER role users with `organization_id` to `ORG_USER`
+   - Sets `organization_id` to null for private USER role users
 
 ## Usage Examples
 
@@ -247,7 +325,9 @@ super_admin = User(
     email="superadmin@example.com",
     hashed_password=get_password_hash("password"),
     role=UserRole.SUPER_ADMIN,
-    is_active=True
+    organization_id=None,  # SuperAdmin not in organization
+    is_active=True,
+    chat_limit=1000
 )
 ```
 
@@ -258,37 +338,78 @@ curl -X POST "http://localhost:8000/api/v1/organizations" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Acme Corporation",
-    "slug": "acme-corp",
     "description": "Main organization",
-    "is_active": true
+    "is_active": true,
+    "admin_user": {
+      "username": "org_admin",
+      "email": "admin@acme.com",
+      "password": "secure_password123"
+    }
   }'
 ```
 
-### Creating a Sub-Organization
+This automatically creates an ORG_ADMIN user for the organization.
+
+### Creating an Organization User
 ```bash
-curl -X POST "http://localhost:8000/api/v1/organizations/1/sub-organizations" \
+curl -X POST "http://localhost:8000/api/v1/organizations/1/users" \
   -H "Authorization: Bearer <org_admin_token>" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Sales Department",
-    "slug": "sales",
-    "description": "Sales team sub-organization",
-    "is_active": true
+    "username": "employee1",
+    "email": "employee1@acme.com",
+    "password": "password",
+    "role": "org_user",
+    "chat_limit": 10
   }'
 ```
 
-### Uploading a Document to an Organization
+### Uploading a Document
 ```bash
-curl -X POST "http://localhost:8000/api/v1/documents/upload?organization_id=1&category=HR" \
-  -H "Authorization: Bearer <user_token>" \
+curl -X POST "http://localhost:8000/api/v1/documents/upload?category=HR" \
+  -H "Authorization: Bearer <org_user_token>" \
   -F "file=@document.pdf"
 ```
 
+### Chatting with a Document
+```bash
+curl -X POST "http://localhost:8000/api/v1/chat" \
+  -H "Authorization: Bearer <org_user_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "document_id": 1,
+    "question": "What is the main topic of this document?"
+  }'
+```
+
+## Important Notes
+
+1. **Private Users (USER role)**:
+   - Cannot upload documents
+   - Cannot chat with documents
+   - Cannot access any organization resources
+   - Are completely separate from organization users
+
+2. **Organization Users (ORG_ADMIN, ORG_USER)**:
+   - Must have an `organization_id`
+   - Can upload and chat with documents
+   - Are scoped to their organization
+
+3. **Role Assignment Rules**:
+   - ORG_ADMIN and ORG_USER: Must have `organization_id`
+   - USER (private): Must have `organization_id = null`
+   - SUPER_ADMIN: Should have `organization_id = null`
+   - ADMIN: `organization_id` is optional
+
+4. **Access Control**:
+   - All document and chat operations verify organization access
+   - Private users are explicitly blocked from organization-scoped operations
+   - Organization users can only access resources in their organization
+
 ## Next Steps
 
-1. **User Management APIs**: Create endpoints for managing users within organizations
-2. **Bulk Operations**: Add bulk document upload/management
-3. **Analytics**: Organization-level usage analytics
-4. **Document Sharing**: Cross-organization document sharing (if needed)
-5. **Permissions**: Fine-grained permissions system
-
+1. **Analytics**: Organization-level usage analytics
+2. **Document Sharing**: Cross-organization document sharing (if needed)
+3. **Permissions**: Fine-grained permissions system within organizations
+4. **Bulk Operations**: Bulk document upload/management
+5. **Organization Settings**: Customizable organization-level settings

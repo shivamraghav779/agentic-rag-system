@@ -1,8 +1,92 @@
-# Comprehensive CRUD API Documentation
+# Comprehensive API Documentation
 
 ## Overview
 
-This document describes all CRUD operations available for users, organizations, sub-organizations, admins, and superadmins in the multi-tenant system.
+This document describes all API endpoints available in the multi-tenant chatbot system. The system follows a layered architecture:
+
+**Architecture**: Routes → Service Layer → CRUD Layer → Database Models
+
+All endpoints use service classes for business logic, ensuring separation of concerns and maintainability.
+
+## Base URL
+
+All endpoints are prefixed with `/api/v1`
+
+## Authentication
+
+Most endpoints require authentication via Bearer token in the Authorization header:
+```
+Authorization: Bearer <access_token>
+```
+
+---
+
+## Authentication API (`/api/v1/auth`)
+
+### Signup
+```
+POST /api/v1/auth/signup
+```
+- **Access**: Public
+- **Body**: `UserSignup`
+  ```json
+  {
+    "username": "john_doe",
+    "email": "john@example.com",
+    "password": "secure_password"
+  }
+  ```
+- **Returns**: `UserResponse` (creates a private USER role)
+- **Notes**: Creates a private user (not associated with any organization)
+
+### Login
+```
+POST /api/v1/auth/login
+```
+- **Access**: Public
+- **Body**: `UserLogin`
+  ```json
+  {
+    "email": "john@example.com",
+    "password": "secure_password"
+  }
+  ```
+- **Returns**: `Token` (access_token, refresh_token, token_type)
+
+### Get Current User
+```
+GET /api/v1/auth/me
+```
+- **Access**: Authenticated users
+- **Returns**: `UserResponse`
+
+### Refresh Token
+```
+POST /api/v1/auth/refresh
+```
+- **Access**: Public
+- **Body**: `RefreshTokenRequest`
+  ```json
+  {
+    "refresh_token": "refresh_token_string"
+  }
+  ```
+- **Returns**: `Token` (new access and refresh tokens)
+
+### Update System Prompt
+```
+PATCH /api/v1/auth/me/system-prompt
+```
+- **Access**: Authenticated users
+- **Body**: `SystemPromptUpdate`
+  ```json
+  {
+    "system_prompt": "You are a helpful assistant."
+  }
+  ```
+- **Returns**: `UserResponse`
+
+---
 
 ## User Management API (`/api/v1/users`)
 
@@ -17,34 +101,33 @@ POST /api/v1/users
     "username": "john_doe",
     "email": "john@example.com",
     "password": "secure_password",
-    "role": "user",
+    "role": "org_user",
     "organization_id": 1,
-    "sub_organization_id": 2,
     "chat_limit": 10
   }
   ```
 - **Returns**: `UserResponse`
 - **Notes**: 
   - Admins cannot create SuperAdmin or Admin users
-  - Organization and sub-organization must be valid
+  - For ORG_ADMIN and ORG_USER roles, organization_id is required
+  - For USER role (private), organization_id must be null
 
 ### List Users
 ```
-GET /api/v1/users?organization_id=1&sub_organization_id=2&role=user&skip=0&limit=100
+GET /api/v1/users?organization_id=1&role=org_user&skip=0&limit=100
 ```
 - **Access**: All authenticated users (filtered by role)
 - **Query Parameters**:
   - `organization_id` (optional): Filter by organization
-  - `sub_organization_id` (optional): Filter by sub-organization
-  - `role` (optional): Filter by role (SUPER_ADMIN, ADMIN, ORG_ADMIN, SUB_ORG_ADMIN, USER)
+  - `role` (optional): Filter by role (SUPER_ADMIN, ADMIN, ORG_ADMIN, ORG_USER, USER)
   - `skip` (default: 0): Pagination offset
   - `limit` (default: 100, max: 100): Pagination limit
 - **Returns**: `List[UserResponse]`
 - **Access Control**:
   - SuperAdmin/Admin: See all users
   - OrgAdmin: See users in their organization
-  - SubOrgAdmin: See users in their sub-organization
-  - User: See only themselves
+  - OrgUser: See only themselves
+  - Private User: See only themselves
 
 ### Get User
 ```
@@ -66,7 +149,6 @@ PATCH /api/v1/users/{user_id}
     "email": "new_email@example.com",
     "role": "org_admin",
     "organization_id": 1,
-    "sub_organization_id": 2,
     "chat_limit": 20,
     "is_active": true,
     "system_prompt": "Custom prompt"
@@ -75,7 +157,7 @@ PATCH /api/v1/users/{user_id}
 - **Returns**: `UserResponse`
 - **Notes**: 
   - Admins cannot modify SuperAdmin or Admin users
-  - Changing organization clears sub-organization if not specified
+  - Role changes must respect organization requirements
 
 ### Delete User
 ```
@@ -122,6 +204,8 @@ PATCH /api/v1/users/{user_id}/activate
   - Cannot deactivate your own account
   - Admins cannot deactivate SuperAdmin or Admin users
 
+---
+
 ## Organization Management API (`/api/v1/organizations`)
 
 ### Create Organization
@@ -133,26 +217,38 @@ POST /api/v1/organizations
   ```json
   {
     "name": "Acme Corporation",
-    "slug": "acme-corp",
     "description": "Main organization",
-    "is_active": true
+    "is_active": true,
+    "admin_user": {
+      "username": "org_admin",
+      "email": "admin@acme.com",
+      "password": "secure_password123"
+    }
   }
   ```
 - **Returns**: `OrganizationResponse`
+- **Notes**: Automatically creates an ORG_ADMIN user for the organization
 
 ### List Organizations
 ```
 GET /api/v1/organizations?skip=0&limit=100
 ```
 - **Access**: All authenticated users (filtered by role)
+- **Query Parameters**:
+  - `skip` (default: 0): Pagination offset
+  - `limit` (default: 100, max: 100): Pagination limit
 - **Returns**: `List[OrganizationResponse]`
+- **Access Control**:
+  - SuperAdmin/Admin: See all organizations
+  - OrgAdmin/OrgUser: See only their organization
+  - Private User: Cannot see any organizations
 
 ### Get Organization
 ```
 GET /api/v1/organizations/{organization_id}
 ```
 - **Access**: Users with access to the organization
-- **Returns**: `OrganizationWithSubOrgs` (includes sub-organizations)
+- **Returns**: `OrganizationResponse`
 
 ### Update Organization
 ```
@@ -180,11 +276,11 @@ DELETE /api/v1/organizations/{organization_id}
 
 ### List Organization Users
 ```
-GET /api/v1/organizations/{organization_id}/users?role=user&skip=0&limit=100
+GET /api/v1/organizations/{organization_id}/users?role=org_user&skip=0&limit=100
 ```
 - **Access**: Users with access to the organization
 - **Query Parameters**:
-  - `role` (optional): Filter by role
+  - `role` (optional): Filter by role (ORG_ADMIN, ORG_USER)
   - `skip`, `limit`: Pagination
 - **Returns**: `List[UserResponse]`
 
@@ -199,145 +295,177 @@ POST /api/v1/organizations/{organization_id}/users
     "username": "org_user",
     "email": "org_user@example.com",
     "password": "password",
-    "role": "user",
-    "sub_organization_id": 2,
+    "role": "org_user",
     "chat_limit": 5
   }
   ```
 - **Returns**: `UserResponse`
 - **Notes**: 
-  - OrgAdmins can only create USER and SUB_ORG_ADMIN roles
+  - OrgAdmins can only create ORG_USER role
   - Organization ID is automatically set
+  - Only ORG_ADMIN and ORG_USER roles can be created in organizations
 
-## Sub-Organization Management (`/api/v1/organizations/{organization_id}/sub-organizations`)
+---
 
-### Create Sub-Organization
-```
-POST /api/v1/organizations/{organization_id}/sub-organizations
-```
-- **Access**: OrgAdmin, Admin, SuperAdmin
-- **Body**: `SubOrganizationCreate`
-  ```json
-  {
-    "name": "Sales Department",
-    "description": "Sales team",
-    "is_active": true,
-    "admin_user": {
-      "username": "sales_admin",
-      "email": "sales_admin@acme.com",
-      "password": "secure_password123"
-    }
-  }
-  ```
-- **Returns**: `SubOrganizationResponse`
-- **Notes**: 
-  - Automatically creates a SUB_ORG_ADMIN user for the sub-organization
-  - Admin user is assigned to the organization and sub-organization
-  - Admin user gets default chat_limit of 50
+## Document Management API (`/api/v1/documents`)
 
-### List Sub-Organizations
+### Upload Document
 ```
-GET /api/v1/organizations/{organization_id}/sub-organizations
+POST /api/v1/documents/upload?organization_id=1&category=GENERAL
 ```
-- **Access**: Users with access to the organization
-- **Returns**: `List[SubOrganizationResponse]`
-
-### Get Sub-Organization
-```
-GET /api/v1/organizations/{organization_id}/sub-organizations/{sub_org_id}
-```
-- **Access**: Users with access to the sub-organization
-- **Returns**: `SubOrganizationResponse`
-
-### Update Sub-Organization
-```
-PATCH /api/v1/organizations/{organization_id}/sub-organizations/{sub_org_id}
-```
-- **Access**: OrgAdmin, Admin, SuperAdmin
-- **Body**: `SubOrganizationUpdate`
-  ```json
-  {
-    "name": "Updated Name",
-    "description": "Updated description",
-    "is_active": false
-  }
-  ```
-- **Returns**: `SubOrganizationResponse`
-
-### Delete Sub-Organization
-```
-DELETE /api/v1/organizations/{organization_id}/sub-organizations/{sub_org_id}
-```
-- **Access**: OrgAdmin, Admin, SuperAdmin
-- **Returns**: 204 No Content
-
-## Sub-Organization User Management (`/api/v1/organizations/{organization_id}/sub-organizations/{sub_org_id}/users`)
-
-### List Sub-Organization Users
-```
-GET /api/v1/organizations/{organization_id}/sub-organizations/{sub_org_id}/users?role=user&skip=0&limit=100
-```
-- **Access**: Users with access to the sub-organization
+- **Access**: Organization users (ORG_ADMIN, ORG_USER)
 - **Query Parameters**:
-  - `role` (optional): Filter by role
-  - `skip`, `limit`: Pagination
-- **Returns**: `List[UserResponse]`
-
-### Create Sub-Organization User
-```
-POST /api/v1/organizations/{organization_id}/sub-organizations/{sub_org_id}/users
-```
-- **Access**: SubOrgAdmin, OrgAdmin, Admin, SuperAdmin
-- **Body**: `UserCreate` (organization_id and sub_organization_id will be set automatically)
+  - `organization_id` (optional): Organization ID (defaults to user's organization)
+  - `category` (optional): Document category (GENERAL, HR, SALES, LEGAL, OPS) - default: GENERAL
+- **Body**: Multipart form data with file
+- **Supported Formats**: PDF, DOCX, TXT, HTML
+- **Returns**: `UploadResponse`
   ```json
   {
-    "username": "suborg_user",
-    "email": "suborg_user@example.com",
-    "password": "password",
-    "role": "user",
-    "chat_limit": 5
+    "document_id": 1,
+    "filename": "document.pdf",
+    "message": "Document uploaded and processed successfully",
+    "chunk_count": 25
   }
   ```
-- **Returns**: `UserResponse`
 - **Notes**: 
-  - SubOrgAdmins can only create USER role
-  - Organization and sub-organization IDs are automatically set
+  - Private users (USER role) cannot upload documents
+  - Documents are scoped to organizations
 
-## Admin Management API (`/api/v1/admin`)
+### List Documents
+```
+GET /api/v1/documents?organization_id=1&category=HR
+```
+- **Access**: Organization users (ORG_ADMIN, ORG_USER)
+- **Query Parameters**:
+  - `organization_id` (optional): Filter by organization
+  - `category` (optional): Filter by category
+- **Returns**: `List[DocumentInfo]`
+- **Notes**: Private users cannot access documents
 
-### List All Users (Admin)
+### Get Document
 ```
-GET /api/v1/admin/users?role=admin&organization_id=1&skip=0&limit=100
+GET /api/v1/documents/{document_id}
 ```
-- **Access**: Admin, SuperAdmin
-- **Query Parameters**: Same as `/api/v1/users`
-- **Returns**: `List[UserResponse]`
-- **Note**: Legacy endpoint, use `/api/v1/users` for comprehensive filtering
+- **Access**: Organization users with access to the document's organization
+- **Returns**: `DocumentInfo`
 
-### Get User (Admin)
+### Delete Document
 ```
-GET /api/v1/admin/users/{user_id}
+DELETE /api/v1/documents/{document_id}
 ```
-- **Access**: Admin, SuperAdmin
-- **Returns**: `UserResponse`
-
-### Update User Chat Limit (Admin)
-```
-PATCH /api/v1/admin/users/{user_id}/chat-limit
-```
-- **Access**: Admin, SuperAdmin
-- **Body**: `ChatLimitUpdate`
-- **Returns**: `UserResponse`
-
-### Toggle User Active Status (Admin)
-```
-PATCH /api/v1/admin/users/{user_id}/activate
-```
-- **Access**: Admin, SuperAdmin
-- **Returns**: `UserResponse`
+- **Access**: Document owner, OrgAdmin (in same org), Admin, SuperAdmin
+- **Returns**: 204 No Content
 - **Notes**: 
-  - Cannot deactivate your own account
-  - Admins cannot deactivate SuperAdmin or Admin users
+  - Deletes document, vector store, and uploaded file
+  - Private users cannot delete documents
+
+---
+
+## Chat API (`/api/v1/chat`)
+
+### Chat with Document
+```
+POST /api/v1/chat
+```
+- **Access**: Organization users (ORG_ADMIN, ORG_USER)
+- **Body**: `ChatRequest`
+  ```json
+  {
+    "document_id": 1,
+    "question": "What is the main topic?",
+    "conversation_id": null
+  }
+  ```
+- **Returns**: `ChatResponse`
+  ```json
+  {
+    "answer": "The main topic is...",
+    "source_documents": ["chunk1", "chunk2"],
+    "conversation_id": 1
+  }
+  ```
+- **Notes**: 
+  - Rate limited based on user's `chat_limit` (per day)
+  - Private users cannot chat with documents
+  - If `conversation_id` is null, a new conversation is created
+
+### Get Chat History
+```
+GET /api/v1/chat/history?document_id=1&conversation_id=1
+```
+- **Access**: Organization users
+- **Query Parameters**:
+  - `document_id` (optional): Filter by document
+  - `conversation_id` (optional): Filter by conversation
+- **Returns**: `List[ChatHistoryResponse]` (sorted ascending by created_at)
+- **Notes**: Private users cannot access chat history
+
+### Get Chat by ID
+```
+GET /api/v1/chat/history/{chat_id}
+```
+- **Access**: Organization users (owner of the chat)
+- **Returns**: `ChatHistoryResponse`
+
+## Conversation Management (`/api/v1/chat/conversations`)
+
+### Create Conversation
+```
+POST /api/v1/chat/conversations
+```
+- **Access**: Organization users
+- **Body**: `ConversationCreate`
+  ```json
+  {
+    "document_id": 1,
+    "title": "Discussion about policies"
+  }
+  ```
+- **Returns**: `ConversationResponse`
+- **Notes**: Private users cannot create conversations
+
+### List Conversations
+```
+GET /api/v1/chat/conversations?document_id=1
+```
+- **Access**: Organization users
+- **Query Parameters**:
+  - `document_id` (optional): Filter by document
+- **Returns**: `List[ConversationResponse]` (sorted descending by created_at)
+- **Notes**: Private users cannot access conversations
+
+### Get Conversation
+```
+GET /api/v1/chat/conversations/{conversation_id}
+```
+- **Access**: Organization users (owner of the conversation)
+- **Returns**: `ConversationResponse`
+
+### Update Conversation
+```
+PATCH /api/v1/chat/conversations/{conversation_id}
+```
+- **Access**: Organization users (owner of the conversation)
+- **Body**: `ConversationUpdate`
+  ```json
+  {
+    "title": "Updated title"
+  }
+  ```
+- **Returns**: `ConversationResponse`
+
+### Delete Conversation
+```
+DELETE /api/v1/chat/conversations/{conversation_id}
+```
+- **Access**: Organization users (owner of the conversation)
+- **Returns**: 204 No Content
+- **Notes**: Deletes conversation and all associated chat history
+
+---
+
+## Admin API (`/api/v1/admin`)
 
 ### List SuperAdmins
 ```
@@ -363,7 +491,7 @@ POST /api/v1/admin/superadmins
 - **Returns**: `UserResponse`
 - **Notes**: 
   - Role is automatically set to SUPER_ADMIN
-  - Organization and sub-organization are set to null
+  - Organization ID is set to null
 
 ### List Admins
 ```
@@ -383,12 +511,13 @@ POST /api/v1/admin/admins
     "username": "admin2",
     "email": "admin2@example.com",
     "password": "secure_password",
-    "organization_id": 1,
     "chat_limit": 500
   }
   ```
 - **Returns**: `UserResponse`
 - **Notes**: Role is automatically set to ADMIN
+
+---
 
 ## Role-Based Access Summary
 
@@ -397,28 +526,68 @@ POST /api/v1/admin/admins
 - ✅ Can create SuperAdmin and Admin users
 - ✅ Can delete any user
 - ✅ Can manage all organizations
+- ✅ Can access all documents and chats
 
 ### Admin
-- ✅ Can create ORG_ADMIN, SUB_ORG_ADMIN, USER
+- ✅ Can create ORG_ADMIN, ORG_USER, USER (private)
 - ❌ Cannot create/modify SuperAdmin or Admin users
 - ✅ Can manage organizations
 - ✅ Can see all users
+- ✅ Can access all documents and chats
 
 ### OrgAdmin
-- ✅ Can create SUB_ORG_ADMIN, USER in their organization
-- ✅ Can manage sub-organizations in their organization
-- ✅ Can see users in their organization
+- ✅ Can create ORG_USER in their organization
+- ✅ Can manage users in their organization
+- ✅ Can upload/manage documents in their organization
+- ✅ Can chat with documents in their organization
 - ❌ Cannot create ORG_ADMIN, ADMIN, SUPER_ADMIN
+- ❌ Cannot access other organizations
 
-### SubOrgAdmin
-- ✅ Can create USER in their sub-organization
-- ✅ Can see users in their sub-organization
-- ❌ Cannot create any admin roles
-
-### User
+### OrgUser
+- ✅ Can upload/view documents in their organization
+- ✅ Can chat with documents in their organization
 - ✅ Can see only themselves
-- ✅ Can access documents in their organization
 - ❌ Cannot manage other users
+- ❌ Cannot access other organizations
+
+### User (Private)
+- ✅ Can see only themselves
+- ✅ Can update their own system prompt
+- ❌ Cannot access documents
+- ❌ Cannot chat with documents
+- ❌ Cannot be assigned to organizations
+- ❌ Cannot manage other users
+
+---
+
+## User Roles
+
+### SUPER_ADMIN
+- Top-level administrator
+- Full system access
+- Not associated with any organization
+
+### ADMIN
+- System administrator (under SuperAdmin)
+- Can manage organizations
+- Not necessarily associated with an organization
+
+### ORG_ADMIN
+- Organization administrator
+- Manages users and documents within their organization
+- Must be associated with an organization
+
+### ORG_USER
+- Regular user within an organization
+- Can upload documents and chat
+- Must be associated with an organization
+
+### USER
+- Private user (not in any organization)
+- Limited access (cannot use document/chat features)
+- Not associated with any organization
+
+---
 
 ## Example Workflows
 
@@ -429,56 +598,46 @@ POST /api/v1/admin/admins
    POST /api/v1/organizations
    {
      "name": "Tech Corp",
-     "slug": "tech-corp",
-     "is_active": true
+     "description": "Technology company",
+     "is_active": true,
+     "admin_user": {
+       "username": "org_admin",
+       "email": "admin@techcorp.com",
+       "password": "secure_password123"
+     }
    }
    ```
+   This automatically creates an ORG_ADMIN user.
 
-2. **Create Organization Admin** (SuperAdmin/Admin):
+2. **Create Organization Users** (OrgAdmin/Admin/SuperAdmin):
    ```bash
    POST /api/v1/organizations/1/users
-   {
-     "username": "org_admin",
-     "email": "org_admin@techcorp.com",
-     "password": "password",
-     "role": "org_admin",
-     "chat_limit": 100
-   }
-   ```
-
-3. **Create Sub-Organization** (OrgAdmin/Admin/SuperAdmin):
-   ```bash
-   POST /api/v1/organizations/1/sub-organizations
-   {
-     "name": "Engineering",
-     "slug": "engineering",
-     "is_active": true
-   }
-   ```
-
-4. **Create Sub-Organization Admin** (OrgAdmin/Admin/SuperAdmin):
-   ```bash
-   POST /api/v1/organizations/1/sub-organizations/1/users
-   {
-     "username": "suborg_admin",
-     "email": "suborg_admin@techcorp.com",
-     "password": "password",
-     "role": "sub_org_admin",
-     "chat_limit": 50
-   }
-   ```
-
-5. **Create Regular Users** (SubOrgAdmin/OrgAdmin/Admin/SuperAdmin):
-   ```bash
-   POST /api/v1/organizations/1/sub-organizations/1/users
    {
      "username": "engineer1",
      "email": "engineer1@techcorp.com",
      "password": "password",
-     "role": "user",
+     "role": "org_user",
      "chat_limit": 10
    }
    ```
+
+3. **Upload Document** (OrgAdmin/OrgUser):
+   ```bash
+   POST /api/v1/documents/upload?category=GENERAL
+   Content-Type: multipart/form-data
+   file: <document.pdf>
+   ```
+
+4. **Chat with Document** (OrgAdmin/OrgUser):
+   ```bash
+   POST /api/v1/chat
+   {
+     "document_id": 1,
+     "question": "What is this document about?"
+   }
+   ```
+
+---
 
 ## Error Responses
 
@@ -491,4 +650,21 @@ All endpoints return standard HTTP status codes:
 - `403 Forbidden`: Insufficient permissions
 - `404 Not Found`: Resource not found
 - `409 Conflict`: Resource already exists (e.g., duplicate email/username)
+- `429 Too Many Requests`: Rate limit exceeded
 
+---
+
+## Architecture Notes
+
+The API follows a layered architecture:
+
+1. **Routes** (`app/api/v1/*`): Handle HTTP requests/responses
+2. **Services** (`app/services/*_service.py`): Business logic layer
+3. **CRUD** (`app/crud/*`): Data access layer
+4. **Models** (`app/models/*`): Database models
+
+This separation ensures:
+- **Maintainability**: Business logic is centralized
+- **Testability**: Services can be tested independently
+- **Scalability**: Easy to add new features
+- **Consistency**: Standardized patterns across codebase
