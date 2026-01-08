@@ -186,7 +186,7 @@ async def get_chat_history(
             )
         query = query.filter(ChatHistory.document_id == document_id)
     
-    chat_history = query.order_by(ChatHistory.created_at.desc()).limit(100).all()
+    chat_history = query.order_by(ChatHistory.created_at.asc()).limit(100).all()
     return chat_history
 
 
@@ -264,7 +264,7 @@ async def get_conversations(
             )
         query = query.filter(Conversation.document_id == document_id)
     
-    conversations = query.order_by(Conversation.updated_at.desc()).all()
+    conversations = query.order_by(Conversation.created_at.asc()).all()
     return conversations
 
 
