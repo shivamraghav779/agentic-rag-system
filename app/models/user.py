@@ -18,6 +18,7 @@ class User(Base):
     is_admin = Column(Boolean, default=False)
     chat_limit = Column(Integer, default=3)  # Default 3 chats per user
     system_prompt = Column(Text, nullable=True)  # User's custom system prompt
+    used_tokens = Column(Integer, default=0, nullable=False)  # Total tokens used by user
     created_at = Column(DateTime, default=datetime.utcnow)
     
     # Relationships

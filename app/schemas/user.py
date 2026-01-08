@@ -37,6 +37,7 @@ class UserResponse(BaseModel):
     is_admin: bool
     chat_limit: int
     system_prompt: str | None = None
+    used_tokens: int
     created_at: datetime
 
     class Config:

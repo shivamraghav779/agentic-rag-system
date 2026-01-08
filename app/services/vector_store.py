@@ -73,23 +73,45 @@ class VectorStoreManager:
             raise Exception(f"Error performing similarity search with score: {str(e)}")
     
     def delete_vector_store(self, store_path: str) -> None:
-        """Delete a vector store and its associated files."""
+        """Delete a vector store and its associated files.
+        
+        FAISS vector stores consist of:
+        - index.faiss: The FAISS index file
+        - index.pkl: The pickled metadata file
+        
+        This method deletes both files and removes the directory if empty.
+        """
         try:
-            # FAISS creates multiple files (.faiss and .pkl)
             base_path = Path(store_path)
+            
+            if not base_path.exists():
+                # Path doesn't exist, nothing to delete
+                return
+            
+            # FAISS creates multiple files (.faiss and .pkl)
             faiss_file = base_path / "index.faiss"
             pkl_file = base_path / "index.pkl"
             
+            # Delete FAISS index file
             if faiss_file.exists():
                 faiss_file.unlink()
+            
+            # Delete pickled metadata file
             if pkl_file.exists():
                 pkl_file.unlink()
             
             # Try to remove directory if empty
             try:
-                base_path.rmdir()
+                if base_path.is_dir():
+                    base_path.rmdir()
             except OSError:
-                pass  # Directory not empty or doesn't exist
+                # Directory not empty or doesn't exist - that's okay
+                pass
+            
+            # If it's a file instead of directory, delete it directly
+            if base_path.is_file():
+                base_path.unlink()
+                
         except Exception as e:
-            raise Exception(f"Error deleting vector store: {str(e)}")
+            raise Exception(f"Error deleting vector store at {store_path}: {str(e)}")
 

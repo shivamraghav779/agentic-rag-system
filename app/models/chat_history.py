@@ -16,6 +16,8 @@ class ChatHistory(Base):
     document_id = Column(Integer, ForeignKey("documents.id"), nullable=False, index=True)
     question = Column(Text, nullable=False)
     answer = Column(Text, nullable=False)
+    prompt_tokens = Column(Integer, default=0, nullable=False)  # Tokens used in prompt
+    completion_tokens = Column(Integer, default=0, nullable=False)  # Tokens used in completion
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     
     # Relationships

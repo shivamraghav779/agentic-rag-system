@@ -122,21 +122,32 @@ async def chat_with_document(
             conversation_history=conversation_history
         )
         
-        # Save chat history
+        # Extract token counts from result
+        prompt_tokens = result.get("prompt_tokens", 0)
+        completion_tokens = result.get("completion_tokens", 0)
+        total_tokens = prompt_tokens + completion_tokens
+        
+        # Save chat history with token counts
         chat_history = ChatHistory(
             conversation_id=conversation.id,
             user_id=current_user.id,
             document_id=document.id,
             question=request.question,
-            answer=result["answer"]
+            answer=result["answer"],
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens
         )
         db.add(chat_history)
+        
+        # Update user's used_tokens
+        current_user.used_tokens = (current_user.used_tokens or 0) + total_tokens
         
         # Update conversation's updated_at timestamp
         conversation.updated_at = datetime.utcnow()
         
         db.commit()
         db.refresh(conversation)
+        db.refresh(current_user)
         
         return ChatResponse(
             answer=result["answer"],

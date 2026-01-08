@@ -137,10 +137,19 @@ Answer:"""
                 }
                 for doc in relevant_docs
             ]
+
+            # Extract token usage from response
+            prompt_tokens = 0
+            completion_tokens = 0
+            if hasattr(response, 'usage_metadata') and response.usage_metadata:
+                prompt_tokens = getattr(response.usage_metadata, 'prompt_token_count', 0) or 0
+                completion_tokens = getattr(response.usage_metadata, 'candidates_token_count', 0) or 0
             
             return {
                 "answer": answer,
-                "source_documents": source_documents
+                "source_documents": source_documents,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens
             }
         except Exception as e:
             raise Exception(f"Error querying RAG chain: {str(e)}")

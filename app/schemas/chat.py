@@ -25,6 +25,8 @@ class ChatHistoryResponse(BaseModel):
     document_id: int
     question: str
     answer: str
+    prompt_tokens: int
+    completion_tokens: int
     created_at: datetime
 
     class Config:

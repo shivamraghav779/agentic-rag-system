@@ -174,21 +174,34 @@ async def delete_document(
         )
     
     try:
-        # Delete vector store
-        if os.path.exists(document.vector_store_path):
-            vector_store_manager.delete_vector_store(document.vector_store_path)
+        # Store paths before deletion
+        vector_store_path = document.vector_store_path
+        file_path = document.file_path
         
-        # Delete file
-        if os.path.exists(document.file_path):
-            os.remove(document.file_path)
-        
-        # Delete from database
+        # Delete from database first (to avoid foreign key issues)
         db.delete(document)
         db.commit()
+        
+        # Delete vector store (FAISS embeddings)
+        try:
+            if vector_store_path:
+                vector_store_manager.delete_vector_store(vector_store_path)
+        except Exception as e:
+            # Log error but continue with file deletion
+            print(f"Warning: Could not delete vector store at {vector_store_path}: {str(e)}")
+        
+        # Delete uploaded file
+        try:
+            if file_path and os.path.exists(file_path):
+                os.remove(file_path)
+        except Exception as e:
+            # Log error but don't fail the request
+            print(f"Warning: Could not delete file at {file_path}: {str(e)}")
         
         return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content=None)
     
     except Exception as e:
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error deleting document: {str(e)}"
