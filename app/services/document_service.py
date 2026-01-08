@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.crud.document import document as document_crud
 from app.crud.organization import organization as organization_crud
-from app.models.document import Document, DocumentCategory
+from app.models.document import Document
 from app.models.user import User, UserRole
 from app.schemas.document import UploadResponse
 from app.services.document_processor import DocumentProcessor
@@ -32,7 +32,7 @@ class DocumentService:
         file: UploadFile,
         user: User,
         organization_id: Optional[int] = None,
-        category: DocumentCategory = DocumentCategory.GENERAL
+        category: Optional[str] = None
     ) -> UploadResponse:
         """
         Upload and process a document.
@@ -147,7 +147,7 @@ class DocumentService:
         self,
         user: User,
         organization_id: Optional[int] = None,
-        category: Optional[DocumentCategory] = None
+        category: Optional[str] = None
     ) -> List[Document]:
         """
         List documents accessible by user.

@@ -114,7 +114,7 @@ SuperAdmin
 - `upload_date`: Upload timestamp
 - `file_size`: Size in bytes
 - `chunk_count`: Number of text chunks
-- `category`: Enum (HR, SALES, LEGAL, OPS, GENERAL) - default: GENERAL
+- `category`: String (VARCHAR(100)) - Organization-specific category name (e.g., "HR", "Sales", "Legal", "Operations", "General")
 - `version`: Version number (default: 1)
 - `extra_metadata`: JSON string for additional metadata
 
@@ -235,7 +235,7 @@ POST /api/v1/documents/upload?organization_id=1&category=HR
 - **Access**: Organization users (ORG_ADMIN, ORG_USER)
 - **Parameters**:
   - `organization_id` (optional): Defaults to user's organization
-  - `category` (optional): Document category (default: GENERAL)
+  - `category` (optional): Document category (organization-specific string, e.g., "HR", "Sales", "Legal")
 - **Body**: File upload (PDF, DOCX, TXT, HTML)
 - **Returns**: `UploadResponse`
 - **Notes**: Private users cannot upload documents
@@ -269,6 +269,54 @@ DELETE /api/v1/documents/{document_id}
 - **Returns**: 204 No Content
 - **Notes**: Private users cannot delete documents
 
+#### Category Management
+
+Organizations can define custom document categories with descriptions. Categories are organization-specific strings (not enums), allowing flexibility.
+
+##### Create Category Description
+```
+POST /api/v1/organizations/{organization_id}/categories
+```
+- **Access**: SuperAdmin, Admin, OrgAdmin (for their organization)
+- **Body**: 
+  ```json
+  {
+    "category": "HR",
+    "description": "Human Resources documents including policies, procedures, and employee handbooks."
+  }
+  ```
+- **Returns**: `DocumentCategoryDescriptionResponse`
+- **Notes**: Category names are organization-specific (e.g., "HR", "Sales", "Legal", "Operations")
+
+##### List Category Descriptions
+```
+GET /api/v1/organizations/{organization_id}/categories
+```
+- **Access**: Users with access to the organization
+- **Returns**: `List[DocumentCategoryDescriptionResponse]`
+
+##### Update Category Description
+```
+PATCH /api/v1/organizations/{organization_id}/categories/{category}
+```
+- **Access**: SuperAdmin, Admin, OrgAdmin (for their organization)
+- **Body**: 
+  ```json
+  {
+    "description": "Updated description"
+  }
+  ```
+- **Returns**: `DocumentCategoryDescriptionResponse`
+- **Notes**: Only description can be updated, category name cannot be changed
+
+##### Delete Category Description
+```
+DELETE /api/v1/organizations/{organization_id}/categories/{category}
+```
+- **Access**: SuperAdmin, Admin, OrgAdmin (for their organization)
+- **Returns**: 204 No Content
+- **Notes**: Deleting a category description does not delete documents with that category
+
 ### Chat Management
 
 All chat endpoints verify organization access before allowing document queries.
@@ -292,6 +340,38 @@ GET /api/v1/chat/history?document_id=1&conversation_id=1
 - **Returns**: `List[ChatHistoryResponse]`
 - **Notes**: Private users cannot access chat history
 
+## Prompt System
+
+The system uses a hierarchical prompt building system for AI responses:
+
+### Private Users
+- Use their personal `system_prompt` (set via `/api/v1/auth/me/system-prompt`)
+- Each private user can customize their own system prompt
+
+### Organization Users
+The prompt is built from multiple sources, combined in this order:
+1. **Organization Description**: Context about the organization (from `organizations.description`)
+2. **Category Description**: Description of the document's category (if document has a category and category description exists)
+3. **Organization System Prompt**: Common system prompt for all organization users (from `organizations.system_prompt`)
+
+This allows for:
+- **Organization-specific context**: All users in an organization get the same organizational context
+- **Category-specific guidance**: Documents in different categories can have specialized instructions
+- **Consistent behavior**: All organization users share the same system prompt, ensuring consistent AI behavior
+- **Flexibility**: Organizations can customize prompts without affecting individual users
+
+**Example Prompt Structure for Organization Users:**
+```
+Organization Context:
+[Organization description]
+
+Knowledge Base Category (HR):
+[Category description if exists]
+
+System Instructions:
+[Organization system prompt]
+```
+
 ## Migration Notes
 
 ### Key Migrations
@@ -299,7 +379,9 @@ GET /api/v1/chat/history?document_id=1&conversation_id=1
 1. **`31eb3f74e5a3_add_multi_tenancy_models.py`**:
    - Creates `organizations` table
    - Adds `role`, `organization_id` to `users` table
-   - Adds `organization_id`, `category`, `version` to `documents` table
+   - Adds `organization_id`, `category` (VARCHAR), `version` to `documents` table
+   - Creates `document_category_descriptions` table for organization-specific category descriptions
+   - Adds `system_prompt` to `organizations` table
    - Creates a default organization for existing data
    - Sets default roles for existing users
 
@@ -312,6 +394,12 @@ GET /api/v1/chat/history?document_id=1&conversation_id=1
    - Adds `ORG_USER` role to enum
    - Updates existing USER role users with `organization_id` to `ORG_USER`
    - Sets `organization_id` to null for private USER role users
+
+4. **`8d9e2efd309c_add_category_descriptions_and_system_prompt.py`**:
+   - Adds `system_prompt` column to `organizations` table
+   - Creates `document_category_descriptions` table for organization-specific category descriptions
+   - Converts `documents.category` from ENUM to VARCHAR(100) for flexibility
+   - Allows organizations to define custom category names
 
 ## Usage Examples
 

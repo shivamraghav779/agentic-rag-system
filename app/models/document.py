@@ -1,19 +1,9 @@
 """Document model."""
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Enum
+from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime
-import enum
 
 from app.db.base import Base
-
-
-class DocumentCategory(str, enum.Enum):
-    """Document category enumeration."""
-    HR = "hr"
-    SALES = "sales"
-    LEGAL = "legal"
-    OPS = "ops"
-    GENERAL = "general"
 
 
 class Document(Base):
@@ -31,7 +21,7 @@ class Document(Base):
     upload_date = Column(DateTime, default=datetime.utcnow)
     file_size = Column(Integer)  # Size in bytes
     chunk_count = Column(Integer, default=0)
-    category = Column(Enum(DocumentCategory), default=DocumentCategory.GENERAL, nullable=True, index=True)
+    category = Column(String(100), nullable=True, index=True)  # Organization-specific category name
     version = Column(Integer, default=1)  # Version control for updated documents
     extra_metadata = Column(Text)  # JSON string for additional metadata
     

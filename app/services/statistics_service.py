@@ -10,7 +10,7 @@ from app.crud.organization import organization as organization_crud
 from app.crud.conversation import conversation as conversation_crud
 from app.crud.chat_history import chat_history as chat_history_crud
 from app.models.user import User, UserRole
-from app.models.document import Document, DocumentCategory
+from app.models.document import Document
 from app.models.organization import Organization
 from app.models.conversation import Conversation
 from app.models.chat_history import ChatHistory

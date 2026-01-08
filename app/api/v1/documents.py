@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.db.session import get_db
-from app.models.document import DocumentCategory
 from app.models.user import User
 from app.api.deps import get_current_active_user
 from app.schemas.document import DocumentInfo, UploadResponse
@@ -19,7 +18,7 @@ router = APIRouter()
 async def upload_document(
     file: UploadFile = File(...),
     organization_id: Optional[int] = Query(None, description="Organization ID (defaults to user's organization)"),
-    category: DocumentCategory = Query(DocumentCategory.GENERAL, description="Document category"),
+    category: Optional[str] = Query(None, description="Document category (organization-specific)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -42,7 +41,7 @@ async def upload_document(
 @router.get("", response_model=List[DocumentInfo])
 async def list_documents(
     organization_id: int = None,
-    category: DocumentCategory = None,
+    category: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):

@@ -13,6 +13,7 @@ class Organization(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False, index=True)
     description = Column(Text, nullable=True)
+    system_prompt = Column(Text, nullable=True)  # Common system prompt for all org users
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -20,4 +21,5 @@ class Organization(Base):
     # Relationships
     documents = relationship("Document", back_populates="organization", cascade="all, delete-orphan")
     users = relationship("User", back_populates="organization", foreign_keys="User.organization_id")
+    category_descriptions = relationship("DocumentCategoryDescription", back_populates="organization", cascade="all, delete-orphan")
 

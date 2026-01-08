@@ -1,27 +1,31 @@
-# 📄 Private Document Chatbot (RAG-based AI)
+# 📄 AI Business Knowledge System
 
-A secure private chatbot that allows users to upload personal documents (PDF, DOCX, TXT, HTML) and interactively chat with their content.
+A secure, multi-tenant RAG-based chatbot application that allows organizations and users to upload documents (PDF, DOCX, TXT, HTML) and interactively chat with their content using AI-powered retrieval-augmented generation.
 
-The system processes documents, builds contextual embeddings, and enables accurate, document-grounded conversations—ensuring privacy and relevance.
+The system processes documents, builds contextual embeddings, and enables accurate, document-grounded conversations—ensuring privacy, security, and relevance for enterprise knowledge management.
 
 ## ✨ Key Features
 
-- 🔐 **Private & secure document handling** - Your documents stay on your server
-- 📂 **Multiple file formats** - Supports PDF, DOCX, TXT, and HTML files
-- 💬 **Interactive chat** - Chat directly with uploaded documents
-- 🧠 **Context-aware responses** - Uses document retrieval for accurate answers
-- 🚀 **CPU-optimized** - Works efficiently on CPU machines without GPU
-- 🗄️ **MySQL integration** - Robust database for document metadata
-- 🔍 **FAISS vector search** - Fast and efficient similarity search
+- 🔐 **Multi-Tenant Architecture** - Hierarchical organization structure with role-based access control
+- 📂 **Multiple File Formats** - Supports PDF, DOCX, TXT, and HTML files
+- 💬 **Interactive Chat** - Chat directly with uploaded documents using RAG
+- 🧠 **Context-Aware Responses** - Uses document retrieval for accurate, source-backed answers
+- 🚀 **CPU-Optimized** - Works efficiently on CPU machines without GPU
+- 🗄️ **MySQL Integration** - Robust database for metadata, users, and conversations
+- 🔍 **FAISS Vector Search** - Fast and efficient similarity search
+- 📊 **Dashboard & Analytics** - Comprehensive statistics for users, organizations, and admins
+- 🔑 **JWT Authentication** - Secure authentication with refresh tokens
+- 👥 **Role-Based Access Control** - SuperAdmin, Admin, OrgAdmin, OrgUser, and Private User roles
 
 ## 🛠️ Technology Stack
 
 - **Vector Database**: FAISS (CPU-optimized)
-- **AI Framework**: Langchain
-- **Language Model**: Google Gemini
-- **Database**: MySQL
+- **AI Framework**: Langchain (for document loaders and vector store)
+- **Language Model**: Google Gemini (for responses and embeddings)
+- **Database**: MySQL 5.7+
 - **Backend**: FastAPI
-- **Embeddings**: Google Generative AI Embeddings
+- **Authentication**: JWT with Argon2 password hashing
+- **Architecture**: Layered architecture (Routes → Services → CRUD → Database)
 
 ## 📋 Prerequisites
 
@@ -51,23 +55,28 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 4. Set up MySQL
+### 4. Set up MySQL Database
 
-Create a MySQL database:
+You can use the provided scripts to create the database:
 
+**Option 1: Using Python script (Recommended)**
 ```bash
-# Connect to MySQL
+python scripts/create_database.py
+```
+
+**Option 2: Using SQL script**
+```bash
+mysql -u root -p < scripts/create_database.sql
+```
+
+**Option 3: Manual setup**
+```bash
 mysql -u root -p
 
-# Create database
-CREATE DATABASE chatbot_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-
-# Create user (optional, or use root)
+CREATE DATABASE chatbot CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER 'chatbot_user'@'localhost' IDENTIFIED BY 'your_password';
-GRANT ALL PRIVILEGES ON chatbot_db.* TO 'chatbot_user'@'localhost';
+GRANT ALL PRIVILEGES ON chatbot.* TO 'chatbot_user'@'localhost';
 FLUSH PRIVILEGES;
-
-# Exit
 EXIT;
 ```
 
@@ -77,10 +86,18 @@ Create a `.env` file in the project root:
 
 ```env
 # Database Configuration
-DATABASE_URL=mysql+pymysql://username:password@localhost:3306/chatbot_db
+DATABASE_URL=mysql+pymysql://username:password@localhost:3306/chatbot
 
 # Gemini API Configuration
 GOOGLE_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-pro
+EMBEDDING_MODEL=models/embedding-001
+
+# JWT Configuration
+SECRET_KEY=your_secret_key_here  # Generate using: openssl rand -hex 32
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+REFRESH_TOKEN_EXPIRE_DAYS=7
 
 # Application Configuration
 UPLOAD_DIR=./uploads
@@ -88,12 +105,46 @@ VECTOR_STORE_DIR=./vector_stores
 CHUNK_SIZE=1000
 CHUNK_OVERLAP=200
 
+# LLM Configuration
+TEMPERATURE=0.7
+MAX_OUTPUT_TOKENS=2048
+RETRIEVAL_K=5
+SOURCE_DOC_PREVIEW_LENGTH=200
+DEFAULT_INSTRUCTION_PROMPT=You are a helpful assistant that answers questions based on the provided documents.
+
 # Server Configuration
 HOST=0.0.0.0
 PORT=8000
+ENVIRONMENT=development
+
+# CORS Configuration
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8080
+
+# File Upload
+MAX_FILE_SIZE=10485760  # 10MB in bytes
+
+# Rate Limiting
+RATE_LIMIT_PER_MINUTE=60
 ```
 
-**Important**: Replace `username`, `password`, and `your_gemini_api_key_here` with your actual values.
+**Important**: 
+- Replace `username`, `password`, and `your_gemini_api_key_here` with your actual values
+- Generate a secure `SECRET_KEY` using: `openssl rand -hex 32`
+
+### 6. Run database migrations
+
+```bash
+# Initialize Alembic (if not already done)
+alembic upgrade head
+```
+
+### 7. Create an admin user
+
+```bash
+python scripts/create_admin.py
+```
+
+This will create a SuperAdmin user for initial system access.
 
 ## 🏃 Running the Application
 
@@ -116,40 +167,239 @@ The API will be available at `http://localhost:8000`
 Once the server is running, you can access:
 - **Interactive API docs**: http://localhost:8000/docs
 - **Alternative docs**: http://localhost:8000/redoc
+- **API Root**: http://localhost:8000/api/v1
 
-## 📡 API Endpoints
+## 📡 API Endpoints Overview
 
-### 1. Upload Document
+### Authentication (`/api/v1/auth`)
+- `POST /signup` - Register a new private user
+- `POST /login` - Login and get access token
+- `GET /me` - Get current user information
+- `POST /refresh` - Refresh access token
+- `PATCH /me/system-prompt` - Update user's system prompt
 
-**POST** `/upload`
+### Documents (`/api/v1/documents`)
+- `POST /upload` - Upload and process a document
+- `GET /` - List documents (organization-scoped)
+- `GET /{document_id}` - Get document information
+- `DELETE /{document_id}` - Delete a document
 
-Upload and process a document (PDF, DOCX, TXT, HTML).
+### Chat (`/api/v1/chat`)
+- `POST /` - Chat with a document
+- `GET /history` - Get chat history
+- `GET /history/{chat_id}` - Get specific chat entry
+- `POST /conversations` - Create a conversation
+- `GET /conversations` - List conversations
+- `GET /conversations/{conversation_id}` - Get conversation
+- `PATCH /conversations/{conversation_id}` - Update conversation
+- `DELETE /conversations/{conversation_id}` - Delete conversation
 
-```bash
-curl -X POST "http://localhost:8000/upload" \
-  -H "accept: application/json" \
-  -H "Content-Type: multipart/form-data" \
-  -F "file=@document.pdf"
+### Users (`/api/v1/users`)
+- `POST /` - Create user (Admin only)
+- `GET /` - List users (role-based filtering)
+- `GET /{user_id}` - Get user information
+- `PATCH /{user_id}` - Update user (Admin only)
+- `DELETE /{user_id}` - Delete user (SuperAdmin only)
+- `PATCH /{user_id}/password` - Update password
+- `PATCH /{user_id}/chat-limit` - Update chat limit
+- `PATCH /{user_id}/activate` - Toggle active status
+
+### Organizations (`/api/v1/organizations`)
+- `POST /` - Create organization (Admin only)
+- `GET /` - List organizations (role-based)
+- `GET /{organization_id}` - Get organization
+- `PATCH /{organization_id}` - Update organization
+- `DELETE /{organization_id}` - Delete organization (SuperAdmin only)
+- `GET /{organization_id}/users` - List organization users
+- `POST /{organization_id}/users` - Create organization user
+
+### Statistics (`/api/v1/statistics`)
+- `GET /user` - Get user statistics
+- `GET /organization/{organization_id}` - Get organization statistics
+- `GET /admin` - Get admin/system statistics
+
+### Admin (`/api/v1/admin`)
+- `GET /superadmins` - List SuperAdmins
+- `POST /superadmins` - Create SuperAdmin
+- `GET /admins` - List Admins
+- `POST /admins` - Create Admin
+
+For detailed API documentation, see:
+- **Complete API Docs**: `CRUD_API_DOCUMENTATION.md`
+- **Frontend Guide**: `FRONTEND_IMPLEMENTATION_GUIDE.md`
+
+## 📁 Project Structure
+
+```
+chatbot/
+├── app/
+│   ├── api/                    # API routes
+│   │   ├── deps.py            # Dependencies (auth, DB session)
+│   │   └── v1/                # API version 1
+│   │       ├── auth.py        # Authentication endpoints
+│   │       ├── users.py       # User management
+│   │       ├── documents.py   # Document management
+│   │       ├── chat.py        # Chat endpoints
+│   │       ├── organizations.py  # Organization management
+│   │       ├── admin.py       # Admin operations
+│   │       └── statistics.py  # Statistics and dashboard
+│   │
+│   ├── core/                  # Core configuration
+│   │   ├── config.py          # Settings and configuration
+│   │   └── security.py        # Security utilities (JWT, password hashing)
+│   │
+│   ├── crud/                   # Data access layer
+│   │   ├── base.py            # Base CRUD class
+│   │   ├── user.py            # User CRUD
+│   │   ├── document.py        # Document CRUD
+│   │   ├── organization.py    # Organization CRUD
+│   │   ├── conversation.py   # Conversation CRUD
+│   │   └── chat_history.py    # ChatHistory CRUD
+│   │
+│   ├── db/                     # Database configuration
+│   │   ├── base.py            # SQLAlchemy base
+│   │   └── session.py         # Database session management
+│   │
+│   ├── models/                 # SQLAlchemy models
+│   │   ├── user.py            # User model
+│   │   ├── document.py        # Document model
+│   │   ├── organization.py    # Organization model
+│   │   ├── conversation.py   # Conversation model
+│   │   └── chat_history.py    # ChatHistory model
+│   │
+│   ├── schemas/                # Pydantic schemas
+│   │   ├── user.py            # User schemas
+│   │   ├── document.py        # Document schemas
+│   │   ├── organization.py    # Organization schemas
+│   │   ├── chat.py            # Chat schemas
+│   │   └── statistics.py      # Statistics schemas
+│   │
+│   └── services/               # Business logic layer
+│       ├── auth_service.py     # Authentication service
+│       ├── user_service.py     # User management service
+│       ├── document_service.py # Document service
+│       ├── chat_service.py    # Chat service
+│       ├── organization_service.py  # Organization service
+│       ├── statistics_service.py    # Statistics service
+│       ├── document_processor.py    # Document processing
+│       ├── rag_chain.py       # RAG implementation
+│       └── vector_store.py    # Vector store management
+│
+├── alembic/                    # Database migrations
+│   ├── versions/              # Migration scripts
+│   └── env.py                 # Alembic environment
+│
+├── scripts/                     # Utility scripts
+│   ├── create_admin.py        # Create admin user
+│   ├── create_database.py     # Database setup
+│   └── create_user_with_org.py  # Create user with organization
+│
+├── uploads/                     # Uploaded documents (auto-created)
+├── vector_stores/              # FAISS vector stores (auto-created)
+├── main.py                      # Application entry point
+├── requirements.txt            # Python dependencies
+├── alembic.ini                 # Alembic configuration
+├── .env                        # Environment variables (create this)
+│
+└── Documentation/
+    ├── README.md                      # This file
+    ├── CRUD_API_DOCUMENTATION.md      # Complete API documentation
+    ├── FRONTEND_IMPLEMENTATION_GUIDE.md # Frontend developer guide
+    ├── PROJECT_ARCHITECTURE.md        # System architecture
+    ├── MULTI_TENANCY.md               # Multi-tenancy guide
+    └── MIGRATIONS.md                  # Database migration guide
 ```
 
-**Response:**
+## 🏗️ Architecture
+
+The application follows a **layered architecture**:
+
+```
+Routes (API Endpoints) 
+    ↓
+Service Layer (Business Logic)
+    ↓
+CRUD Layer (Data Access)
+    ↓
+Database Models
+```
+
+This ensures:
+- **Separation of Concerns**: Each layer has a specific responsibility
+- **Maintainability**: Business logic is centralized in services
+- **Testability**: Services can be tested independently
+- **Scalability**: Easy to add new features
+
+For detailed architecture documentation, see `PROJECT_ARCHITECTURE.md`.
+
+## 👥 User Roles & Multi-Tenancy
+
+The system supports hierarchical multi-tenancy:
+
+```
+SuperAdmin
+  └── Admin
+      └── Organization
+          ├── OrgAdmin
+          └── OrgUser
+```
+
+**Roles**:
+- **SuperAdmin**: Full system access
+- **Admin**: Can manage organizations
+- **OrgAdmin**: Manages organization and users
+- **OrgUser**: Regular organization user
+- **User**: Private user (not in organization)
+
+For detailed multi-tenancy documentation, see `MULTI_TENANCY.md`.
+
+## 📝 Example Usage
+
+### 1. Register a User
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/auth/signup" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "john_doe",
+    "email": "john@example.com",
+    "password": "secure_password"
+  }'
+```
+
+### 2. Login
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "john@example.com",
+    "password": "secure_password"
+  }'
+```
+
+Response:
 ```json
 {
-  "document_id": 1,
-  "filename": "document.pdf",
-  "message": "Document uploaded and processed successfully",
-  "chunk_count": 15
+  "access_token": "eyJ...",
+  "refresh_token": "eyJ...",
+  "token_type": "bearer"
 }
 ```
 
-### 2. Chat with Document
-
-**POST** `/chat`
-
-Ask questions about a specific document.
+### 3. Upload a Document (Organization User)
 
 ```bash
-curl -X POST "http://localhost:8000/chat" \
+curl -X POST "http://localhost:8000/api/v1/documents/upload?category=HR" \
+  -H "Authorization: Bearer <access_token>" \
+  -F "file=@document.pdf"
+```
+
+### 4. Chat with Document
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/chat" \
+  -H "Authorization: Bearer <access_token>" \
   -H "Content-Type: application/json" \
   -d '{
     "document_id": 1,
@@ -157,90 +407,50 @@ curl -X POST "http://localhost:8000/chat" \
   }'
 ```
 
-**Response:**
-```json
-{
-  "answer": "The main topic is...",
-  "source_documents": [
-    {
-      "content": "Relevant text chunk...",
-      "metadata": {
-        "source": "path/to/file",
-        "chunk_id": 0,
-        "type": "pdf"
-      }
-    }
-  ]
-}
-```
-
-### 3. List Documents
-
-**GET** `/documents`
-
-Get a list of all uploaded documents.
+### 5. Get User Statistics
 
 ```bash
-curl -X GET "http://localhost:8000/documents"
-```
-
-### 4. Get Document Info
-
-**GET** `/documents/{document_id}`
-
-Get information about a specific document.
-
-```bash
-curl -X GET "http://localhost:8000/documents/1"
-```
-
-### 5. Delete Document
-
-**DELETE** `/documents/{document_id}`
-
-Delete a document and its associated data.
-
-```bash
-curl -X DELETE "http://localhost:8000/documents/1"
-```
-
-## 📁 Project Structure
-
-```
-chatbot/
-├── main.py                 # FastAPI application and endpoints
-├── config.py              # Configuration settings
-├── database.py            # Database models and session management
-├── document_processor.py  # Document parsing and chunking
-├── vector_store.py        # FAISS vector store management
-├── rag_chain.py          # RAG chain implementation
-├── requirements.txt       # Python dependencies
-├── .env                  # Environment variables (create this)
-├── .gitignore           # Git ignore file
-├── uploads/             # Uploaded documents (auto-created)
-└── vector_stores/       # FAISS vector stores (auto-created)
+curl -X GET "http://localhost:8000/api/v1/statistics/user" \
+  -H "Authorization: Bearer <access_token>"
 ```
 
 ## 🔧 Configuration
 
-### Chunking Parameters
+### Environment Variables
 
-Adjust document chunking in `.env`:
+Key configuration options in `.env`:
 
-- `CHUNK_SIZE`: Size of each text chunk (default: 1000)
-- `CHUNK_OVERLAP`: Overlap between chunks (default: 200)
+- **Database**: `DATABASE_URL` - MySQL connection string
+- **Gemini API**: `GOOGLE_API_KEY` - Your Gemini API key
+- **JWT**: `SECRET_KEY`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `REFRESH_TOKEN_EXPIRE_DAYS`
+- **File Upload**: `MAX_FILE_SIZE` - Maximum file size in bytes
+- **Chunking**: `CHUNK_SIZE`, `CHUNK_OVERLAP` - Document chunking parameters
+- **LLM**: `TEMPERATURE`, `MAX_OUTPUT_TOKENS`, `RETRIEVAL_K` - Model parameters
 
-### File Storage
+### Database Migrations
 
-- `UPLOAD_DIR`: Directory for uploaded files (default: `./uploads`)
-- `VECTOR_STORE_DIR`: Directory for FAISS indexes (default: `./vector_stores`)
+The project uses Alembic for database migrations:
 
-## 🔒 Security Considerations
+```bash
+# Create a new migration
+alembic revision -m "description"
 
-1. **API Key Security**: Never commit your `.env` file with API keys
-2. **File Access**: Ensure proper file permissions on upload directories
-3. **Database Security**: Use strong MySQL credentials
-4. **Network Security**: Consider adding authentication for production use
+# Apply migrations
+alembic upgrade head
+
+# Rollback migration
+alembic downgrade -1
+```
+
+## 🔒 Security Features
+
+1. **JWT Authentication**: Secure token-based authentication
+2. **Password Hashing**: Argon2 algorithm for password security
+3. **Role-Based Access Control**: Hierarchical permission system
+4. **Organization Isolation**: Documents and chats scoped to organizations
+5. **Rate Limiting**: Per-user chat limits
+6. **Input Validation**: Pydantic schemas for all inputs
+7. **SQL Injection Protection**: Parameterized queries via SQLAlchemy
 
 ## 🐛 Troubleshooting
 
@@ -251,43 +461,63 @@ Adjust document chunking in `.env`:
    pip install -r requirements.txt
    ```
 
-2. **Database connection error**: Verify MySQL is running and credentials are correct
+2. **Database connection error**: 
+   - Verify MySQL is running
+   - Check credentials in `.env`
+   - Ensure database exists
 
-3. **Gemini API error**: Check that your API key is valid and has proper permissions
+3. **Gemini API error**: 
+   - Verify API key is correct
+   - Check API key permissions
+   - Ensure you have quota available
 
-4. **FAISS errors**: Ensure `faiss-cpu` is installed (not `faiss` which requires GPU)
+4. **FAISS errors**: 
+   - Ensure `faiss-cpu` is installed (not `faiss` which requires GPU)
+   - Check Python version compatibility
 
-## 📝 Example Usage
+5. **Migration errors**:
+   - Ensure database is created
+   - Check Alembic version
+   - Review migration scripts for conflicts
 
-### Python Example
+6. **Enum mapping errors**:
+   - The system uses `UserRoleType` custom type decorator
+   - Handles database enum values automatically
+   - No migration needed for enum value changes
 
-```python
-import requests
+## 📚 Documentation
 
-# Upload a document
-with open('document.pdf', 'rb') as f:
-    response = requests.post(
-        'http://localhost:8000/upload',
-        files={'file': f}
-    )
-    doc_data = response.json()
-    document_id = doc_data['document_id']
+- **API Documentation**: `CRUD_API_DOCUMENTATION.md` - Complete API reference
+- **Frontend Guide**: `FRONTEND_IMPLEMENTATION_GUIDE.md` - Frontend developer guide with wireframes
+- **Architecture**: `PROJECT_ARCHITECTURE.md` - System architecture details
+- **Multi-Tenancy**: `MULTI_TENANCY.md` - Multi-tenancy implementation guide
+- **Migrations**: `MIGRATIONS.md` - Database migration guide
 
-# Chat with the document
-chat_response = requests.post(
-    'http://localhost:8000/chat',
-    json={
-        'document_id': document_id,
-        'question': 'What are the key points?'
-    }
-)
-answer = chat_response.json()['answer']
-print(answer)
-```
+## 🧪 Development
+
+### Running Tests
+
+(To be implemented)
+
+### Code Style
+
+- Follow PEP 8 for Python code
+- Use type hints for all functions
+- Document all classes and methods with docstrings
+
+### Adding New Features
+
+1. Create/update models in `app/models/`
+2. Create CRUD operations in `app/crud/`
+3. Create service in `app/services/`
+4. Create API routes in `app/api/v1/`
+5. Create schemas in `app/schemas/`
+6. Update documentation
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! Please follow the layered architecture pattern:
+- Routes → Services → CRUD → Database
 
 ## 📄 License
 
@@ -295,10 +525,12 @@ See LICENSE file for details.
 
 ## 🙏 Acknowledgments
 
-- Langchain for the AI framework
+- Langchain for document loaders and text splitting
 - FAISS for efficient vector search
-- Google Gemini for language models
+- Google Gemini for language models and embeddings
 - FastAPI for the web framework
+- SQLAlchemy for ORM
+- Alembic for database migrations
 
 ---
 

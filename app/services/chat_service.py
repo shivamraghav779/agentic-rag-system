@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.crud.document import document as document_crud
 from app.crud.conversation import conversation as conversation_crud
 from app.crud.chat_history import chat_history as chat_history_crud
+from app.crud.document_category_description import document_category_description as category_description_crud
 from app.models.document import Document
 from app.models.user import User
 from app.models.conversation import Conversation
@@ -18,6 +19,7 @@ from app.schemas.chat import (
     ConversationUpdate
 )
 from app.services.rag_chain import RAGChain
+from app.core.config import settings
 
 
 class ChatService:
@@ -109,11 +111,14 @@ class ChatService:
             # Get conversation history
             conversation_history = self._get_conversation_history(conversation.id)
             
+            # Build system prompt based on user type
+            system_prompt = self._build_system_prompt(user, document)
+            
             # Query RAG chain
             result = self.rag_chain.query(
                 document.vector_store_path,
                 request.question,
-                system_prompt=user.system_prompt,
+                system_prompt=system_prompt,
                 conversation_history=conversation_history
             )
             
@@ -504,4 +509,56 @@ class ChatService:
             {"question": chat.question, "answer": chat.answer}
             for chat in reversed(recent_chats)
         ]
+    
+    def _build_system_prompt(self, user: User, document: Document) -> str:
+        """
+        Build system prompt based on user type.
+        
+        For private users: Use user.system_prompt
+        For organization users: Combine organization description, category description, and system prompt
+        
+        Args:
+            user: Current user
+            document: Document being queried
+            
+        Returns:
+            Complete system prompt string
+        """
+        # Private users: use their personal system prompt
+        if not user.is_organization_user():
+            if user.system_prompt:
+                return user.system_prompt
+            else:
+                return "You are a helpful AI assistant that answers questions based on the provided context from documents."
+        
+        # Organization users: build comprehensive prompt
+        prompt_parts = []
+        
+        # 1. Organization description
+        if document.organization and document.organization.description:
+            prompt_parts.append(f"Organization Context:\n{document.organization.description}\n")
+        
+        # 2. Category description
+        if document.category:
+            category_desc = category_description_crud.get_by_organization_and_category(
+                self.db,
+                organization_id=document.organization_id,
+                category=document.category
+            )
+            if category_desc and category_desc.description:
+                prompt_parts.append(f"Knowledge Base Category ({document.category.upper()}):\n{category_desc.description}\n")
+        
+        # 3. System prompt (from organization or default)
+        if document.organization and document.organization.system_prompt:
+            system_prompt_text = document.organization.system_prompt
+        elif user.system_prompt:
+            # Fallback to user's system prompt if org doesn't have one
+            system_prompt_text = user.system_prompt
+        else:
+            # Default system prompt
+            system_prompt_text = "You are a helpful AI assistant that answers questions based on the provided context from documents."
+        
+        prompt_parts.append(f"System Instructions:\n{system_prompt_text}")
+        
+        return "\n".join(prompt_parts)
 

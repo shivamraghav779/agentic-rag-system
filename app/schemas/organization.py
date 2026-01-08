@@ -8,6 +8,7 @@ class OrganizationBase(BaseModel):
     """Base organization schema."""
     name: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
+    system_prompt: Optional[str] = Field(None, description="Common system prompt for all organization users")
     is_active: bool = True
 
 
@@ -27,6 +28,7 @@ class OrganizationUpdate(BaseModel):
     """Schema for updating an organization."""
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
+    system_prompt: Optional[str] = Field(None, description="Common system prompt for all organization users")
     is_active: Optional[bool] = None
 
 

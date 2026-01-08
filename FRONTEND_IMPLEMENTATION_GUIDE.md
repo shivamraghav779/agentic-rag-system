@@ -417,7 +417,7 @@ interface LoginForm {
 ```typescript
 interface DocumentUploadProps {
   organizationId?: number;
-  category?: DocumentCategory;
+  category?: string; // Organization-specific category name
   onSuccess: (document: DocumentInfo) => void;
 }
 ```
@@ -443,7 +443,7 @@ interface DocumentUploadProps {
 │  │  Supported: PDF, DOCX, TXT, HTML   │ │
 │  └───────────────────────────────────┘ │
 │                                         │
-│  Category: [Dropdown: HR/Sales/Legal...] │
+│  Category: [Dropdown/Input: Organization-specific] │
 │                                         │
 │  Organization: [Auto-selected/Disabled]│
 │                                         │
@@ -464,7 +464,7 @@ interface DocumentUploadProps {
 ```typescript
 interface DocumentsListProps {
   organizationId?: number;
-  category?: DocumentCategory;
+  category?: string; // Organization-specific category name
   onDocumentSelect: (document: DocumentInfo) => void;
 }
 ```
@@ -485,7 +485,7 @@ interface DocumentsListProps {
 ├─────────────────────────────────────────────────────────┤
 │  [Search...]  [Filter: All Categories ▼]  [Sort: Date ▼]│
 │                                                          │
-│  Category Filters: [All] [HR] [Sales] [Legal] [Ops]     │
+│  Category Filters: [All] [Dynamic categories from org]   │
 │                                                          │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
 │  │ 📄 policy.pdf│  │ 📄 handbook  │  │ 📄 contract  │  │
@@ -710,6 +710,96 @@ interface ChatInterfaceProps {
 
 ---
 
+## Category Management (OrgAdmin/Admin)
+
+Organizations can define custom document categories with descriptions. Categories are organization-specific strings.
+
+### Create Category Description
+**API**: `POST /api/v1/organizations/{organization_id}/categories`
+
+**UI Placement**: 
+- Organization settings page
+- Category management section
+- Document upload page (if creating new category)
+
+**Suggested Component**: `CategoryForm`
+```typescript
+interface CategoryForm {
+  category: string; // Category name (e.g., "HR", "Sales", "Legal")
+  description: string; // Description of what this category contains
+}
+```
+
+**UI Elements**:
+- Category name input (required, max 100 chars)
+- Description textarea (optional)
+- Submit button
+- Validation: Category must be unique per organization
+
+**Example**:
+```typescript
+const createCategory = async (orgId: number, data: CategoryForm) => {
+  const response = await fetch(`/api/v1/organizations/${orgId}/categories`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(data)
+  });
+  return response.json();
+};
+```
+
+### List Category Descriptions
+**API**: `GET /api/v1/organizations/{organization_id}/categories`
+
+**UI Placement**: 
+- Organization settings page
+- Category management section
+- Document upload page (category selector)
+
+**Suggested Component**: `CategoryList`
+```typescript
+interface CategoryItem {
+  id: number;
+  category: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+```
+
+**UI Elements**:
+- List of categories with descriptions
+- Edit/Delete buttons (for OrgAdmin/Admin)
+- Empty state if no categories defined
+
+### Update Category Description
+**API**: `PATCH /api/v1/organizations/{organization_id}/categories/{category}`
+
+**UI Placement**: 
+- Category management page
+- Edit modal/dialog
+
+**UI Elements**:
+- Description textarea (category name cannot be changed)
+- Save button
+- Cancel button
+
+### Delete Category Description
+**API**: `DELETE /api/v1/organizations/{organization_id}/categories/{category}`
+
+**UI Placement**: 
+- Category management page
+- Delete confirmation dialog
+
+**UI Elements**:
+- Delete button with confirmation
+- Warning message: "Deleting category description does not delete documents with this category"
+
+---
+
 ## Organization Management (Admin)
 
 ### List Organizations
@@ -860,8 +950,9 @@ interface ChatMessageProps {
 ### 5. CategoryFilter
 ```typescript
 interface CategoryFilterProps {
-  selected: DocumentCategory | 'all';
-  onChange: (category: DocumentCategory | 'all') => void;
+  selected: string | 'all'; // Organization-specific category names
+  onChange: (category: string | 'all') => void;
+  categories: string[]; // List of available categories for the organization
 }
 ```
 

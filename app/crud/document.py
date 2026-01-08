@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
 from app.crud.base import CRUDBase
-from app.models.document import Document, DocumentCategory
+from app.models.document import Document
 from app.models.user import User, UserRole
 from app.schemas.document import DocumentInfo
 
@@ -17,7 +17,7 @@ class CRUDDocument(CRUDBase[Document, dict, dict]):
         db: Session,
         *,
         organization_id: int,
-        category: Optional[DocumentCategory] = None,
+        category: Optional[str] = None,
         user: Optional[User] = None
     ) -> List[Document]:
         """Get documents by organization ID with optional filtering."""

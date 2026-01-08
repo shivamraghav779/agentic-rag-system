@@ -218,6 +218,7 @@ POST /api/v1/organizations
   {
     "name": "Acme Corporation",
     "description": "Main organization",
+    "system_prompt": "You are a helpful AI assistant for Acme Corporation. Provide accurate and professional responses.",
     "is_active": true,
     "admin_user": {
       "username": "org_admin",
@@ -260,6 +261,7 @@ PATCH /api/v1/organizations/{organization_id}
   {
     "name": "Updated Name",
     "description": "Updated description",
+    "system_prompt": "Updated system prompt for all organization users",
     "is_active": false
   }
   ```
@@ -311,12 +313,12 @@ POST /api/v1/organizations/{organization_id}/users
 
 ### Upload Document
 ```
-POST /api/v1/documents/upload?organization_id=1&category=GENERAL
+POST /api/v1/documents/upload?organization_id=1&category=HR
 ```
 - **Access**: Organization users (ORG_ADMIN, ORG_USER)
 - **Query Parameters**:
   - `organization_id` (optional): Organization ID (defaults to user's organization)
-  - `category` (optional): Document category (GENERAL, HR, SALES, LEGAL, OPS) - default: GENERAL
+  - `category` (optional): Document category (organization-specific string, e.g., "HR", "Sales", "Legal", "Operations", "General") - default: null
 - **Body**: Multipart form data with file
 - **Supported Formats**: PDF, DOCX, TXT, HTML
 - **Returns**: `UploadResponse`
@@ -339,7 +341,7 @@ GET /api/v1/documents?organization_id=1&category=HR
 - **Access**: Organization users (ORG_ADMIN, ORG_USER)
 - **Query Parameters**:
   - `organization_id` (optional): Filter by organization
-  - `category` (optional): Filter by category
+  - `category` (optional): Filter by category (organization-specific string)
 - **Returns**: `List[DocumentInfo]`
 - **Notes**: Private users cannot access documents
 
@@ -462,6 +464,72 @@ DELETE /api/v1/chat/conversations/{conversation_id}
 - **Access**: Organization users (owner of the conversation)
 - **Returns**: 204 No Content
 - **Notes**: Deletes conversation and all associated chat history
+
+---
+
+## Category Management API (`/api/v1/organizations/{organization_id}/categories`)
+
+Organizations can define custom document categories with descriptions. These categories are organization-specific and can be any string value.
+
+### Create Category Description
+```
+POST /api/v1/organizations/{organization_id}/categories
+```
+- **Access**: SuperAdmin, Admin, OrgAdmin (for their organization)
+- **Body**: `DocumentCategoryDescriptionCreate`
+  ```json
+  {
+    "category": "HR",
+    "description": "Human Resources documents including policies, procedures, and employee handbooks."
+  }
+  ```
+- **Returns**: `DocumentCategoryDescriptionResponse`
+- **Notes**: 
+  - Category names are organization-specific (e.g., "HR", "Sales", "Legal", "Operations")
+  - Each organization can define their own category names
+  - Category must be unique per organization
+
+### List Category Descriptions
+```
+GET /api/v1/organizations/{organization_id}/categories?skip=0&limit=100
+```
+- **Access**: Users with access to the organization
+- **Query Parameters**:
+  - `skip` (default: 0): Pagination offset
+  - `limit` (default: 100, max: 100): Pagination limit
+- **Returns**: `List[DocumentCategoryDescriptionResponse]`
+
+### Get Category Description
+```
+GET /api/v1/organizations/{organization_id}/categories/{category}
+```
+- **Access**: Users with access to the organization
+- **Returns**: `DocumentCategoryDescriptionResponse`
+- **Notes**: `{category}` is the category name (string)
+
+### Update Category Description
+```
+PATCH /api/v1/organizations/{organization_id}/categories/{category}
+```
+- **Access**: SuperAdmin, Admin, OrgAdmin (for their organization)
+- **Body**: `DocumentCategoryDescriptionUpdate`
+  ```json
+  {
+    "description": "Updated description for this category"
+  }
+  ```
+- **Returns**: `DocumentCategoryDescriptionResponse`
+- **Notes**: Only description can be updated, category name cannot be changed
+
+### Delete Category Description
+```
+DELETE /api/v1/organizations/{organization_id}/categories/{category}
+```
+- **Access**: SuperAdmin, Admin, OrgAdmin (for their organization)
+- **Returns**: 204 No Content
+- **Notes**: 
+  - Deleting a category description does not delete documents with that category
+  - Documents will still have the category, but without a description
 
 ---
 
@@ -621,21 +689,30 @@ POST /api/v1/admin/admins
    }
    ```
 
-3. **Upload Document** (OrgAdmin/OrgUser):
+3. **Create Category Description** (OrgAdmin/Admin/SuperAdmin):
    ```bash
-   POST /api/v1/documents/upload?category=GENERAL
+   POST /api/v1/organizations/1/categories
+   {
+     "category": "HR",
+     "description": "Human Resources documents"
+   }
+   ```
+
+4. **Upload Document** (OrgAdmin/OrgUser):
+   ```bash
+   POST /api/v1/documents/upload?category=HR
    Content-Type: multipart/form-data
    file: <document.pdf>
    ```
+   Note: Category is now a string value, organization-specific.
 
-4. **Chat with Document** (OrgAdmin/OrgUser):
-   ```bash
-   POST /api/v1/chat
-   {
-     "document_id": 1,
-     "question": "What is this document about?"
-   }
-   ```
+5. **Chat with Document** (OrgAdmin/OrgUser):
+
+   Note: The chat system will use:
+   - Organization description
+   - Category description (if document has a category)
+   - Organization system prompt (common for all org users)
+   - User's personal system prompt (for private users only)
 
 ---
 
@@ -798,3 +875,35 @@ This separation ensures:
 - **Testability**: Services can be tested independently
 - **Scalability**: Easy to add new features
 - **Consistency**: Standardized patterns across codebase
+
+## Prompt System
+
+The system uses a hierarchical prompt building system for AI responses:
+
+### Private Users
+- Use their personal `system_prompt` (set via `/api/v1/auth/me/system-prompt`)
+- Each private user can customize their own system prompt
+
+### Organization Users
+The prompt is built from multiple sources, combined in this order:
+1. **Organization Description**: Context about the organization (from `organizations.description`)
+2. **Category Description**: Description of the document's category (if document has a category and category description exists)
+3. **Organization System Prompt**: Common system prompt for all organization users (from `organizations.system_prompt`)
+
+This allows for:
+- **Organization-specific context**: All users in an organization get the same organizational context
+- **Category-specific guidance**: Documents in different categories can have specialized instructions
+- **Consistent behavior**: All organization users share the same system prompt, ensuring consistent AI behavior
+- **Flexibility**: Organizations can customize prompts without affecting individual users
+
+**Example Prompt Structure for Organization Users:**
+```
+Organization Context:
+[Organization description]
+
+Knowledge Base Category (HR):
+[Category description if exists]
+
+System Instructions:
+[Organization system prompt]
+```
