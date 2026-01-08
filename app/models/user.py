@@ -1,5 +1,5 @@
 """User model."""
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, ForeignKey, Enum
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, ForeignKey, TypeDecorator
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -16,6 +16,68 @@ class UserRole(str, enum.Enum):
     ORG_USER = "org_user"  # Organization user - regular user within an organization
 
 
+class UserRoleType(TypeDecorator):
+    """Custom type to map database enum values to Python UserRole enum."""
+    impl = String
+    cache_ok = True
+    
+    # Mapping from database values to Python enum
+    # This handles any case mismatches or legacy values
+    DB_TO_ENUM = {
+        'super_admin': UserRole.SUPER_ADMIN,
+        'SUPER_ADMIN': UserRole.SUPER_ADMIN,
+        'admin': UserRole.ADMIN,
+        'ADMIN': UserRole.ADMIN,
+        'org_admin': UserRole.ORG_ADMIN,
+        'ORG_ADMIN': UserRole.ORG_ADMIN,
+        'org_user': UserRole.ORG_USER,
+        'ORG_USER': UserRole.ORG_USER,
+        'user': UserRole.USER,
+        'USER': UserRole.USER,
+        # Legacy values if any
+        'sub_org_admin': UserRole.USER,  # Map removed role to USER
+        'SUB_ORG_ADMIN': UserRole.USER,
+    }
+    
+    # Reverse mapping for writing to database
+    ENUM_TO_DB = {enum_val: db_val for db_val, enum_val in DB_TO_ENUM.items()}
+    # Use lowercase as default for new values
+    ENUM_TO_DB.update({
+        UserRole.SUPER_ADMIN: 'super_admin',
+        UserRole.ADMIN: 'admin',
+        UserRole.ORG_ADMIN: 'org_admin',
+        UserRole.ORG_USER: 'org_user',
+        UserRole.USER: 'user',
+    })
+    
+    def process_bind_param(self, value, dialect):
+        """Convert Python enum to database value."""
+        if value is None:
+            return None
+        if isinstance(value, UserRole):
+            return self.ENUM_TO_DB.get(value, value.value)
+        return str(value)
+    
+    def process_result_value(self, value, dialect):
+        """Convert database value to Python enum."""
+        if value is None:
+            return None
+        # Try direct mapping first
+        if value in self.DB_TO_ENUM:
+            return self.DB_TO_ENUM[value]
+        # Try case-insensitive lookup
+        value_lower = value.lower()
+        for db_val, enum_val in self.DB_TO_ENUM.items():
+            if db_val.lower() == value_lower:
+                return enum_val
+        # Fallback: try to match by enum value
+        try:
+            return UserRole(value)
+        except ValueError:
+            # If all else fails, return as string (shouldn't happen)
+            return value
+
+
 class User(Base):
     """User model for authentication with multi-tenancy support."""
     __tablename__ = "users"
@@ -27,7 +89,13 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     
     # Role-based access control
-    role = Column(Enum(UserRole), default=UserRole.USER, nullable=False, index=True)  # Default: private user
+    # Use custom type to handle database enum value mapping without migration
+    role = Column(
+        UserRoleType(50),  # String length for MySQL
+        default=UserRole.USER,
+        nullable=False,
+        index=True
+    )  # Default: private user
     
     # Multi-tenancy relationships
     organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=True, index=True)
