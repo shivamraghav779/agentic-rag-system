@@ -264,7 +264,7 @@ async def get_conversations(
             )
         query = query.filter(Conversation.document_id == document_id)
     
-    conversations = query.order_by(Conversation.created_at.asc()).all()
+    conversations = query.order_by(Conversation.created_at.desc()).all()
     return conversations
 
 
