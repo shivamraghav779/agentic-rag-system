@@ -18,7 +18,7 @@ async def signup(
 ):
     """Register a new user."""
     auth_service = AuthService(db)
-    return auth_service.signup(user_data)
+    return await auth_service.signup(user_data)
 
 
 @router.post("/login", response_model=Token)
@@ -28,7 +28,7 @@ async def login(
 ):
     """Login and get access token."""
     auth_service = AuthService(db)
-    return auth_service.login(user_credentials)
+    return await auth_service.login(user_credentials)
 
 
 @router.get("/me", response_model=UserResponse)
@@ -46,7 +46,7 @@ async def refresh_token(
 ):
     """Refresh access token using refresh token."""
     auth_service = AuthService(db)
-    return auth_service.refresh_access_token(refresh_data.refresh_token)
+    return await auth_service.refresh_access_token(refresh_data.refresh_token)
 
 
 @router.patch("/me/system-prompt", response_model=UserResponse)
@@ -57,5 +57,5 @@ async def update_system_prompt(
 ):
     """Update the current user's system prompt."""
     auth_service = AuthService(db)
-    return auth_service.update_system_prompt(current_user, prompt_data)
+    return await auth_service.update_system_prompt(current_user, prompt_data)
 

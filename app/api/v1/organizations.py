@@ -33,7 +33,7 @@ async def create_organization(
     Automatically creates an ORG_ADMIN user for the organization.
     """
     organization_service = OrganizationService(db)
-    return organization_service.create_organization(org_data=org_data, current_user=current_user)
+    return await organization_service.create_organization(org_data=org_data, current_user=current_user)
 
 
 @router.get("", response_model=List[OrganizationResponse])
@@ -45,7 +45,7 @@ async def list_organizations(
 ):
     """List organizations based on user role."""
     organization_service = OrganizationService(db)
-    return organization_service.list_organizations(user=current_user, skip=skip, limit=limit)
+    return await organization_service.list_organizations(user=current_user, skip=skip, limit=limit)
 
 
 @router.get("/{organization_id}", response_model=OrganizationResponse)
@@ -56,7 +56,7 @@ async def get_organization(
 ):
     """Get organization details."""
     organization_service = OrganizationService(db)
-    return organization_service.get_organization(organization_id=organization_id, user=current_user)
+    return await organization_service.get_organization(organization_id=organization_id, user=current_user)
 
 
 @router.patch("/{organization_id}", response_model=OrganizationResponse)
@@ -68,7 +68,7 @@ async def update_organization(
 ):
     """Update an organization (SuperAdmin or Admin only)."""
     organization_service = OrganizationService(db)
-    return organization_service.update_organization(
+    return await organization_service.update_organization(
         organization_id=organization_id,
         org_data=org_data,
         current_user=current_user
@@ -83,7 +83,7 @@ async def delete_organization(
 ):
     """Delete an organization (SuperAdmin only)."""
     organization_service = OrganizationService(db)
-    organization_service.delete_organization(organization_id=organization_id, current_user=current_user)
+    await organization_service.delete_organization(organization_id=organization_id, current_user=current_user)
     return None
 
 
@@ -100,7 +100,7 @@ async def list_organization_users(
 ):
     """List users in an organization."""
     organization_service = OrganizationService(db)
-    return organization_service.list_organization_users(
+    return await organization_service.list_organization_users(
         organization_id=organization_id,
         user=current_user,
         role=role,
@@ -118,7 +118,7 @@ async def create_organization_user(
 ):
     """Create a user in an organization (Org Admin, Admin, or SuperAdmin only)."""
     organization_service = OrganizationService(db)
-    return organization_service.create_organization_user(
+    return await organization_service.create_organization_user(
         organization_id=organization_id,
         user_data=user_data,
         current_user=current_user

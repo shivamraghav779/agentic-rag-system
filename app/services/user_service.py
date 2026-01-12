@@ -18,7 +18,7 @@ class UserService:
         self.user_crud = user_crud
         self.organization_crud = organization_crud
     
-    def create_user(self, user_data: UserCreate, current_user: User) -> User:
+    async def create_user(self, user_data: UserCreate, current_user: User) -> User:
         """
         Create a new user.
         
@@ -74,7 +74,7 @@ class UserService:
         
         return self.user_crud.create(self.db, obj_in=user_data)
     
-    def list_users(
+    async def list_users(
         self,
         current_user: User,
         organization_id: Optional[int] = None,
@@ -121,7 +121,7 @@ class UserService:
         
         return query.order_by(User.created_at.desc()).offset(skip).limit(limit).all()
     
-    def get_user(self, user_id: int, current_user: User) -> User:
+    async def get_user(self, user_id: int, current_user: User) -> User:
         """
         Get user by ID.
         
@@ -166,7 +166,7 @@ class UserService:
         
         return user
     
-    def update_user(
+    async def update_user(
         self,
         user_id: int,
         user_data: UserUpdate,
@@ -282,7 +282,7 @@ class UserService:
         
         return self.user_crud.update(self.db, db_obj=user, obj_in=update_dict)
     
-    def delete_user(self, user_id: int, current_user: User) -> None:
+    async def delete_user(self, user_id: int, current_user: User) -> None:
         """
         Delete a user.
         
@@ -306,7 +306,7 @@ class UserService:
         
         self.user_crud.delete(self.db, id=user_id)
     
-    def update_password(
+    async def update_password(
         self,
         user_id: int,
         password_data: PasswordUpdate,
@@ -345,7 +345,7 @@ class UserService:
         
         return user
     
-    def update_chat_limit(
+    async def update_chat_limit(
         self,
         user_id: int,
         limit_data: ChatLimitUpdate,
@@ -381,7 +381,7 @@ class UserService:
         
         return user
     
-    def toggle_active_status(self, user_id: int, current_user: User) -> User:
+    async def toggle_active_status(self, user_id: int, current_user: User) -> User:
         """
         Toggle user active status.
         

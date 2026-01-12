@@ -29,7 +29,7 @@ class StatisticsService:
         """Initialize statistics service with database session."""
         self.db = db
     
-    def get_user_statistics(self, user: User) -> UserStatistics:
+    async def get_user_statistics(self, user: User) -> UserStatistics:
         """
         Get statistics for a specific user.
         
@@ -98,7 +98,7 @@ class StatisticsService:
             recent_activity=recent_activity
         )
     
-    def get_organization_statistics(self, organization_id: int, user: User) -> OrganizationStatistics:
+    async def get_organization_statistics(self, organization_id: int, user: User) -> OrganizationStatistics:
         """
         Get statistics for an organization.
         
@@ -213,7 +213,7 @@ class StatisticsService:
             recent_activity=recent_activity
         )
     
-    def get_admin_statistics(self, user: User) -> AdminStatistics:
+    async def get_admin_statistics(self, user: User) -> AdminStatistics:
         """
         Get system-wide statistics for admin users.
         

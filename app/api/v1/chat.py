@@ -26,7 +26,7 @@ async def chat_with_document(
     Rate limited based on user's chat_limit.
     """
     chat_service = ChatService(db)
-    return chat_service.chat_with_document(request=request, user=current_user)
+    return await chat_service.chat_with_document(request=request, user=current_user)
 
 
 @router.get("/history", response_model=List[ChatHistoryResponse])
@@ -38,7 +38,7 @@ async def get_chat_history(
 ):
     """Get chat history for the current user, optionally filtered by document or conversation."""
     chat_service = ChatService(db)
-    return chat_service.get_chat_history(
+    return await chat_service.get_chat_history(
         user=current_user,
         document_id=document_id,
         conversation_id=conversation_id
@@ -53,7 +53,7 @@ async def get_chat_by_id(
 ):
     """Get a specific chat history entry."""
     chat_service = ChatService(db)
-    return chat_service.get_chat_by_id(chat_id=chat_id, user=current_user)
+    return await chat_service.get_chat_by_id(chat_id=chat_id, user=current_user)
 
 
 @router.post("/conversations", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED)
@@ -64,7 +64,7 @@ async def create_conversation(
 ):
     """Create a new conversation for a document."""
     chat_service = ChatService(db)
-    return chat_service.create_conversation(conversation_data=conversation_data, user=current_user)
+    return await chat_service.create_conversation(conversation_data=conversation_data, user=current_user)
 
 
 @router.get("/conversations", response_model=List[ConversationResponse])
@@ -75,7 +75,7 @@ async def get_conversations(
 ):
     """Get all conversations for the current user, optionally filtered by document."""
     chat_service = ChatService(db)
-    return chat_service.get_conversations(user=current_user, document_id=document_id)
+    return await chat_service.get_conversations(user=current_user, document_id=document_id)
 
 
 @router.get("/conversations/{conversation_id}", response_model=ConversationResponse)
@@ -86,7 +86,7 @@ async def get_conversation_by_id(
 ):
     """Get a specific conversation."""
     chat_service = ChatService(db)
-    return chat_service.get_conversation_by_id(conversation_id=conversation_id, user=current_user)
+    return await chat_service.get_conversation_by_id(conversation_id=conversation_id, user=current_user)
 
 
 @router.patch("/conversations/{conversation_id}", response_model=ConversationResponse)
@@ -98,7 +98,7 @@ async def update_conversation(
 ):
     """Update a conversation (e.g., change title)."""
     chat_service = ChatService(db)
-    return chat_service.update_conversation(
+    return await chat_service.update_conversation(
         conversation_id=conversation_id,
         conversation_data=conversation_data,
         user=current_user
@@ -113,5 +113,5 @@ async def delete_conversation(
 ):
     """Delete a conversation and all its chat history."""
     chat_service = ChatService(db)
-    chat_service.delete_conversation(conversation_id=conversation_id, user=current_user)
+    await chat_service.delete_conversation(conversation_id=conversation_id, user=current_user)
     return None

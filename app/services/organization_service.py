@@ -21,7 +21,7 @@ class OrganizationService:
         self.organization_crud = organization_crud
         self.user_crud = user_crud
     
-    def create_organization(
+    async def create_organization(
         self,
         org_data: OrganizationCreate,
         current_user: User
@@ -76,7 +76,7 @@ class OrganizationService:
         
         return organization
     
-    def list_organizations(
+    async def list_organizations(
         self,
         user: User,
         skip: int = 0,
@@ -100,7 +100,7 @@ class OrganizationService:
             limit=limit
         )
     
-    def get_organization(self, organization_id: int, user: User) -> Organization:
+    async def get_organization(self, organization_id: int, user: User) -> Organization:
         """
         Get organization by ID.
         
@@ -129,7 +129,7 @@ class OrganizationService:
         
         return organization
     
-    def update_organization(
+    async def update_organization(
         self,
         organization_id: int,
         org_data: OrganizationUpdate,
@@ -159,7 +159,7 @@ class OrganizationService:
             obj_in=org_data
         )
     
-    def delete_organization(
+    async def delete_organization(
         self,
         organization_id: int,
         current_user: User
@@ -180,7 +180,7 @@ class OrganizationService:
         
         self.organization_crud.delete(self.db, id=organization_id)
     
-    def list_organization_users(
+    async def list_organization_users(
         self,
         organization_id: int,
         user: User,
@@ -216,7 +216,7 @@ class OrganizationService:
             limit=limit
         )
     
-    def create_organization_user(
+    async def create_organization_user(
         self,
         organization_id: int,
         user_data: UserCreate,

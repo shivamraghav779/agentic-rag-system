@@ -33,7 +33,7 @@ async def create_category_description(
     Only SuperAdmin, Admin, and OrgAdmin can create categories.
     """
     category_service = CategoryDescriptionService(db)
-    return category_service.create_category_description(
+    return await category_service.create_category_description(
         organization_id=organization_id,
         category_data=category_data,
         current_user=current_user
@@ -57,7 +57,7 @@ async def list_category_descriptions(
     Users can view categories for organizations they have access to.
     """
     category_service = CategoryDescriptionService(db)
-    return category_service.list_category_descriptions(
+    return await category_service.list_category_descriptions(
         organization_id=organization_id,
         current_user=current_user,
         skip=skip,
@@ -81,7 +81,7 @@ async def get_category_description(
     Users can view categories for organizations they have access to.
     """
     category_service = CategoryDescriptionService(db)
-    return category_service.get_category_description(
+    return await category_service.get_category_description(
         organization_id=organization_id,
         category=category,
         current_user=current_user
@@ -105,7 +105,7 @@ async def update_category_description(
     Only SuperAdmin, Admin, and OrgAdmin can update categories.
     """
     category_service = CategoryDescriptionService(db)
-    return category_service.update_category_description(
+    return await category_service.update_category_description(
         organization_id=organization_id,
         category=category,
         category_data=category_data,
@@ -129,7 +129,7 @@ async def delete_category_description(
     Only SuperAdmin, Admin, and OrgAdmin can delete categories.
     """
     category_service = CategoryDescriptionService(db)
-    category_service.delete_category_description(
+    await category_service.delete_category_description(
         organization_id=organization_id,
         category=category,
         current_user=current_user

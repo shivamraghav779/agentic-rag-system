@@ -23,7 +23,7 @@ async def list_superadmins(
 ):
     """List all SuperAdmin users (SuperAdmin only)."""
     user_service = UserService(db)
-    return user_service.list_users(
+    return await user_service.list_users(
         current_user=current_user,
         role=UserRole.SUPER_ADMIN,
         skip=skip,
@@ -43,7 +43,7 @@ async def create_superadmin(
     user_data.organization_id = None
     
     user_service = UserService(db)
-    return user_service.create_user(user_data=user_data, current_user=current_user)
+    return await user_service.create_user(user_data=user_data, current_user=current_user)
 
 
 # Admin specific endpoints
@@ -57,7 +57,7 @@ async def list_admins(
 ):
     """List all Admin users (Admin or SuperAdmin only)."""
     user_service = UserService(db)
-    return user_service.list_users(
+    return await user_service.list_users(
         current_user=current_user,
         role=UserRole.ADMIN,
         skip=skip,
@@ -76,4 +76,4 @@ async def create_admin(
     user_data.role = UserRole.ADMIN
     
     user_service = UserService(db)
-    return user_service.create_user(user_data=user_data, current_user=current_user)
+    return await user_service.create_user(user_data=user_data, current_user=current_user)

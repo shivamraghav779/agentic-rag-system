@@ -24,7 +24,7 @@ class AuthService:
         self.db = db
         self.user_crud = user_crud
     
-    def signup(self, user_data: UserSignup) -> User:
+    async def signup(self, user_data: UserSignup) -> User:
         """
         Register a new private user.
         
@@ -64,7 +64,7 @@ class AuthService:
         
         return self.user_crud.create(self.db, obj_in=user_create)
     
-    def authenticate(self, email: str, password: str) -> Optional[User]:
+    async def authenticate(self, email: str, password: str) -> Optional[User]:
         """
         Authenticate a user by email and password.
         
@@ -77,7 +77,7 @@ class AuthService:
         """
         return self.user_crud.authenticate(self.db, email=email, password=password)
     
-    def login(self, user_credentials: UserLogin) -> Token:
+    async def login(self, user_credentials: UserLogin) -> Token:
         """
         Login user and generate tokens.
         
@@ -90,7 +90,7 @@ class AuthService:
         Raises:
             HTTPException: If authentication fails or user is inactive
         """
-        user = self.authenticate(user_credentials.email, user_credentials.password)
+        user = await self.authenticate(user_credentials.email, user_credentials.password)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -121,7 +121,7 @@ class AuthService:
             token_type="bearer"
         )
     
-    def refresh_access_token(self, refresh_token: str) -> Token:
+    async def refresh_access_token(self, refresh_token: str) -> Token:
         """
         Refresh access token using refresh token.
         
@@ -181,7 +181,7 @@ class AuthService:
             token_type="bearer"
         )
     
-    def update_system_prompt(self, user: User, prompt_data: SystemPromptUpdate) -> User:
+    async def update_system_prompt(self, user: User, prompt_data: SystemPromptUpdate) -> User:
         """
         Update user's system prompt.
         

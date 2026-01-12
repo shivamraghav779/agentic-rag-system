@@ -27,7 +27,7 @@ class DocumentService:
         self.document_processor = DocumentProcessor()
         self.vector_store_manager = VectorStoreManager()
     
-    def upload_document(
+    async def upload_document(
         self,
         file: UploadFile,
         user: User,
@@ -86,7 +86,7 @@ class DocumentService:
             file_path = os.path.join(settings.upload_dir, safe_filename)
 
             # Save uploaded file
-            content = file.read()
+            content = await file.read()
             with open(file_path, "wb") as buffer:
                 buffer.write(content)
             
@@ -138,12 +138,25 @@ class DocumentService:
             # Clean up on error
             if 'file_path' in locals() and os.path.exists(file_path):
                 os.remove(file_path)
+            
+            # Provide more user-friendly error messages
+            error_message = str(e)
+            if "api key" in error_message.lower() or "api_key" in error_message.lower():
+                if "expired" in error_message.lower() or "invalid" in error_message.lower():
+                    detail = "API key expired or invalid. Please contact the administrator to renew the API keys."
+                else:
+                    detail = f"API key error: {error_message}"
+            elif "vector store" in error_message.lower():
+                detail = f"Error creating document embeddings: {error_message}"
+            else:
+                detail = f"Error processing document: {error_message}"
+            
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error processing document: {str(e)}"
+                detail=detail
             )
     
-    def list_documents(
+    async def list_documents(
         self,
         user: User,
         organization_id: Optional[int] = None,
@@ -189,7 +202,7 @@ class DocumentService:
         
         return []
     
-    def get_document(self, document_id: int, user: User) -> Document:
+    async def get_document(self, document_id: int, user: User) -> Document:
         """
         Get a specific document.
         
@@ -226,7 +239,7 @@ class DocumentService:
         
         return document
     
-    def delete_document(self, document_id: int, user: User) -> None:
+    async def delete_document(self, document_id: int, user: User) -> None:
         """
         Delete a document.
         

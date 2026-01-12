@@ -47,7 +47,7 @@ async def list_documents(
 ):
     """List documents based on user's organization access."""
     document_service = DocumentService(db)
-    return document_service.list_documents(
+    return await document_service.list_documents(
         user=current_user,
         organization_id=organization_id,
         category=category
@@ -62,7 +62,7 @@ async def get_document(
 ):
     """Get information about a specific document."""
     document_service = DocumentService(db)
-    return document_service.get_document(document_id=document_id, user=current_user)
+    return await document_service.get_document(document_id=document_id, user=current_user)
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -73,5 +73,5 @@ async def delete_document(
 ):
     """Delete a document and its associated vector store."""
     document_service = DocumentService(db)
-    document_service.delete_document(document_id=document_id, user=current_user)
+    await document_service.delete_document(document_id=document_id, user=current_user)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -127,6 +127,41 @@ class APIKeyManager:
         
         return False
     
+    def _is_api_key_error(self, error: Exception) -> bool:
+        """Check if the error is an API key expiration/invalid error."""
+        error_str = str(error).lower()
+        
+        # Check for API key related errors
+        api_key_indicators = [
+            'api key expired',
+            'api key invalid',
+            'api_key_expired',
+            'api_key_invalid',
+            'invalid api key',
+            'invalid_api_key',
+            'api key not found',
+            'authentication failed',
+            'unauthorized',
+            'invalid_argument',
+            'api_key_invalid'
+        ]
+        
+        if any(indicator in error_str for indicator in api_key_indicators):
+            return True
+        
+        # Check error details if available (for Google API errors)
+        if hasattr(error, 'status_code') and error.status_code == 400:
+            # Check if it's an INVALID_ARGUMENT with API key error
+            if 'api key' in error_str or 'api_key' in error_str:
+                return True
+        
+        # Check for Google API specific invalid argument exceptions related to API keys
+        if google_exceptions and isinstance(error, google_exceptions.InvalidArgument):
+            if 'api key' in error_str or 'api_key' in error_str:
+                return True
+        
+        return False
+    
     def execute_with_fallback(self, func, *args, **kwargs):
         """
         Execute a function with API key fallback on rate limit errors.
@@ -176,8 +211,23 @@ class APIKeyManager:
                     
                     # Continue to next attempt with new key
                     continue
+                elif self._is_api_key_error(e):
+                    # API key expired or invalid - try next key
+                    logger.warning(
+                        f"API key error (expired/invalid) with key at index {self.current_key_index}: {str(e)}"
+                    )
+                    
+                    # Try to switch to next key
+                    if not self._switch_to_next_key():
+                        # All keys exhausted or invalid
+                        raise Exception(
+                            "All API keys are expired or invalid. Please renew your API keys."
+                        ) from e
+                    
+                    # Continue to next attempt with new key
+                    continue
                 else:
-                    # Not a rate limit error, re-raise immediately
+                    # Not a rate limit or API key error, re-raise immediately
                     logger.error(f"Non-rate-limit error with Gemini API: {str(e)}")
                     raise
         

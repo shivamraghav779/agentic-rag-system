@@ -33,7 +33,7 @@ class ChatService:
         self.chat_history_crud = chat_history_crud
         self.rag_chain = RAGChain()
     
-    def check_rate_limit(self, user: User) -> bool:
+    async def check_rate_limit(self, user: User) -> bool:
         """
         Check if user has remaining chat requests.
         
@@ -46,7 +46,7 @@ class ChatService:
         today_count = self.chat_history_crud.count_today(self.db, user_id=user.id)
         return today_count < user.chat_limit
     
-    def chat_with_document(self, request: ChatRequest, user: User) -> ChatResponse:
+    async def chat_with_document(self, request: ChatRequest, user: User) -> ChatResponse:
         """
         Chat with a document using RAG.
         
@@ -68,7 +68,7 @@ class ChatService:
             )
         
         # Check rate limit
-        if not self.check_rate_limit(user):
+        if not await self.check_rate_limit(user):
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=f"Rate limit exceeded. You have {user.chat_limit} chats per day."
@@ -164,7 +164,7 @@ class ChatService:
                 detail=f"Error processing chat request: {str(e)}"
             )
     
-    def get_chat_history(
+    async def get_chat_history(
         self,
         user: User,
         document_id: Optional[int] = None,
@@ -225,7 +225,7 @@ class ChatService:
             conversation_id=conversation_id
         )
     
-    def get_chat_by_id(self, chat_id: int, user: User) -> ChatHistory:
+    async def get_chat_by_id(self, chat_id: int, user: User) -> ChatHistory:
         """
         Get a specific chat history entry.
         
@@ -260,7 +260,7 @@ class ChatService:
         
         return chat
     
-    def create_conversation(self, conversation_data: ConversationCreate, user: User) -> Conversation:
+    async def create_conversation(self, conversation_data: ConversationCreate, user: User) -> Conversation:
         """
         Create a new conversation.
         
@@ -300,7 +300,7 @@ class ChatService:
         
         return self.conversation_crud.create_from_dict(self.db, obj_dict=conversation_dict)
     
-    def get_conversations(
+    async def get_conversations(
         self,
         user: User,
         document_id: Optional[int] = None
@@ -342,7 +342,7 @@ class ChatService:
             document_id=document_id
         )
     
-    def get_conversation_by_id(self, conversation_id: int, user: User) -> Conversation:
+    async def get_conversation_by_id(self, conversation_id: int, user: User) -> Conversation:
         """
         Get a specific conversation.
         
@@ -377,7 +377,7 @@ class ChatService:
         
         return conversation
     
-    def update_conversation(
+    async def update_conversation(
         self,
         conversation_id: int,
         conversation_data: ConversationUpdate,
@@ -425,7 +425,7 @@ class ChatService:
         
         return conversation
     
-    def delete_conversation(self, conversation_id: int, user: User) -> None:
+    async def delete_conversation(self, conversation_id: int, user: User) -> None:
         """
         Delete a conversation.
         

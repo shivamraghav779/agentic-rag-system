@@ -30,7 +30,7 @@ async def create_user(
 ):
     """Create a new user (SuperAdmin or Admin only)."""
     user_service = UserService(db)
-    return user_service.create_user(user_data=user_data, current_user=current_user)
+    return await user_service.create_user(user_data=user_data, current_user=current_user)
 
 
 @router.get("", response_model=List[UserResponse])
@@ -44,7 +44,7 @@ async def list_users(
 ):
     """List users with role-based filtering."""
     user_service = UserService(db)
-    return user_service.list_users(
+    return await user_service.list_users(
         current_user=current_user,
         organization_id=organization_id,
         role=role,
@@ -61,7 +61,7 @@ async def get_user(
 ):
     """Get user information."""
     user_service = UserService(db)
-    return user_service.get_user(user_id=user_id, current_user=current_user)
+    return await user_service.get_user(user_id=user_id, current_user=current_user)
 
 
 @router.patch("/{user_id}", response_model=UserResponse)
@@ -73,7 +73,7 @@ async def update_user(
 ):
     """Update user information (SuperAdmin or Admin only)."""
     user_service = UserService(db)
-    return user_service.update_user(
+    return await user_service.update_user(
         user_id=user_id,
         user_data=user_data,
         current_user=current_user
@@ -88,7 +88,7 @@ async def delete_user(
 ):
     """Delete a user (SuperAdmin only)."""
     user_service = UserService(db)
-    user_service.delete_user(user_id=user_id, current_user=current_user)
+    await user_service.delete_user(user_id=user_id, current_user=current_user)
     return None
 
 
@@ -101,7 +101,7 @@ async def update_user_password(
 ):
     """Update user password (SuperAdmin or Admin only)."""
     user_service = UserService(db)
-    return user_service.update_password(
+    return await user_service.update_password(
         user_id=user_id,
         password_data=password_data,
         current_user=current_user
@@ -117,7 +117,7 @@ async def update_user_chat_limit(
 ):
     """Update user chat limit (SuperAdmin or Admin only)."""
     user_service = UserService(db)
-    return user_service.update_chat_limit(
+    return await user_service.update_chat_limit(
         user_id=user_id,
         limit_data=limit_data,
         current_user=current_user
@@ -132,4 +132,4 @@ async def toggle_user_active(
 ):
     """Toggle user active status (SuperAdmin or Admin only)."""
     user_service = UserService(db)
-    return user_service.toggle_active_status(user_id=user_id, current_user=current_user)
+    return await user_service.toggle_active_status(user_id=user_id, current_user=current_user)

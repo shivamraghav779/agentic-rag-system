@@ -23,7 +23,7 @@ class CategoryDescriptionService:
         self.category_description_crud = category_description_crud
         self.organization_crud = organization_crud
     
-    def create_category_description(
+    async def create_category_description(
         self,
         organization_id: int,
         category_data: DocumentCategoryDescriptionCreate,
@@ -86,7 +86,7 @@ class CategoryDescriptionService:
         
         return DocumentCategoryDescriptionResponse.model_validate(created)
     
-    def get_category_description(
+    async def get_category_description(
         self,
         organization_id: int,
         category: str,
@@ -135,7 +135,7 @@ class CategoryDescriptionService:
         
         return DocumentCategoryDescriptionResponse.model_validate(category_desc)
     
-    def list_category_descriptions(
+    async def list_category_descriptions(
         self,
         organization_id: int,
         current_user: User,
@@ -181,7 +181,7 @@ class CategoryDescriptionService:
         
         return [DocumentCategoryDescriptionResponse.model_validate(cat) for cat in categories]
     
-    def update_category_description(
+    async def update_category_description(
         self,
         organization_id: int,
         category: str,
@@ -242,7 +242,7 @@ class CategoryDescriptionService:
         
         return DocumentCategoryDescriptionResponse.model_validate(updated)
     
-    def delete_category_description(
+    async def delete_category_description(
         self,
         organization_id: int,
         category: str,

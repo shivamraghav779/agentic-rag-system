@@ -33,7 +33,7 @@ async def get_user_statistics(
     - Recent activity
     """
     statistics_service = StatisticsService(db)
-    return statistics_service.get_user_statistics(user=current_user)
+    return await statistics_service.get_user_statistics(user=current_user)
 
 
 @router.get("/organization/{organization_id}", response_model=OrganizationStatistics)
@@ -58,7 +58,7 @@ async def get_organization_statistics(
     - Recent activity
     """
     statistics_service = StatisticsService(db)
-    return statistics_service.get_organization_statistics(
+    return await statistics_service.get_organization_statistics(
         organization_id=organization_id,
         user=current_user
     )
@@ -83,5 +83,5 @@ async def get_admin_statistics(
     - Recent activity across the system
     """
     statistics_service = StatisticsService(db)
-    return statistics_service.get_admin_statistics(user=current_user)
+    return await statistics_service.get_admin_statistics(user=current_user)
 
