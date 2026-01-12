@@ -122,6 +122,41 @@ class ProviderKeyManager:
         
         return False
     
+    def _is_api_key_error(self, error: Exception) -> bool:
+        """Check if the error is an API key expiration/invalid error."""
+        error_str = str(error).lower()
+        
+        # Check for API key related errors
+        api_key_indicators = [
+            'api key expired',
+            'api key invalid',
+            'api_key_expired',
+            'api_key_invalid',
+            'invalid api key',
+            'invalid_api_key',
+            'api key not found',
+            'authentication failed',
+            'unauthorized',
+            'invalid_argument',
+            'api_key_invalid'
+        ]
+        
+        if any(indicator in error_str for indicator in api_key_indicators):
+            return True
+        
+        # Check error details if available (for Google API errors)
+        if hasattr(error, 'status_code') and error.status_code == 400:
+            # Check if it's an INVALID_ARGUMENT with API key error
+            if 'api key' in error_str or 'api_key' in error_str:
+                return True
+        
+        # Check for Google API specific invalid argument exceptions related to API keys
+        if google_exceptions and isinstance(error, google_exceptions.InvalidArgument):
+            if 'api key' in error_str or 'api_key' in error_str:
+                return True
+        
+        return False
+    
     def has_available_key(self) -> bool:
         """Check if there's at least one available (non-blacklisted) key."""
         for i in range(len(self.api_keys)):
@@ -263,8 +298,24 @@ class MultiProviderLLMManager:
                             # All keys exhausted for this provider, try next provider
                             logger.warning(f"All {self.current_provider.value.upper()} keys exhausted, trying next provider")
                             break
+                    elif provider_manager._is_api_key_error(e):
+                        # API key expired or invalid - try next key
+                        logger.warning(
+                            f"API key error (expired/invalid) with {self.current_provider.value.upper()} "
+                            f"key at index {provider_manager.current_key_index}: {str(e)}"
+                        )
+                        
+                        # Try to switch to next key
+                        if provider_manager._switch_to_next_key():
+                            continue
+                        else:
+                            # All keys exhausted or invalid for this provider, try next provider
+                            logger.warning(
+                                f"All {self.current_provider.value.upper()} keys expired/invalid, trying next provider"
+                            )
+                            break
                     else:
-                        # Not a rate limit error, re-raise
+                        # Not a rate limit or API key error, re-raise
                         logger.error(f"Non-rate-limit error with {self.current_provider.value.upper()} API: {str(e)}")
                         raise
             

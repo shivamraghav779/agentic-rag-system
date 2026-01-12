@@ -159,9 +159,24 @@ class ChatService:
             raise
         except Exception as e:
             self.db.rollback()
+            
+            # Provide more user-friendly error messages
+            error_message = str(e)
+            if "api key" in error_message.lower() or "api_key" in error_message.lower():
+                if "expired" in error_message.lower() or "invalid" in error_message.lower():
+                    detail = "API key expired or invalid. Please contact the administrator to renew the API keys."
+                else:
+                    detail = f"API key error: {error_message}"
+            elif "embedding" in error_message.lower() or "vector store" in error_message.lower():
+                detail = f"Error retrieving document information: {error_message}"
+            elif "rate limit" in error_message.lower():
+                detail = f"Service temporarily unavailable due to rate limits: {error_message}"
+            else:
+                detail = f"Error processing chat request: {error_message}"
+            
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error processing chat request: {str(e)}"
+                detail=detail
             )
     
     async def get_chat_history(

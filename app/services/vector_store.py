@@ -95,7 +95,19 @@ class VectorStoreManager:
         try:
             return self.api_key_manager.execute_with_fallback(_search)
         except Exception as e:
-            raise Exception(f"Error performing similarity search: {str(e)}")
+            error_message = str(e)
+            # Provide more specific error messages
+            if "api key" in error_message.lower() or "api_key" in error_message.lower():
+                if "expired" in error_message.lower() or "invalid" in error_message.lower():
+                    raise Exception(
+                        "API key expired or invalid. Please contact the administrator to renew the API keys."
+                    ) from e
+                else:
+                    raise Exception(f"API key error: {error_message}") from e
+            elif "embedding" in error_message.lower():
+                raise Exception(f"Error embedding content: {error_message}") from e
+            else:
+                raise Exception(f"Error performing similarity search: {error_message}") from e
     
     def similarity_search_with_score(self, store_path: str, query: str, k: int = 4) -> List[tuple]:
         """Perform similarity search with scores."""
