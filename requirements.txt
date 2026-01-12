@@ -36,3 +36,4 @@ pydantic
 pydantic-settings
 numpy
 setuptools
+requests

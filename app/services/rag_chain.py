@@ -1,18 +1,26 @@
-"""RAG chain implementation using direct Gemini API and FAISS."""
+"""RAG chain implementation using Gemini/Groq API and FAISS."""
 from typing import List, Optional, Dict
 from datetime import datetime
 import google.generativeai as genai
 from app.services.vector_store import VectorStoreManager
-from app.core.config import settings
+from app.services.groq_client import GroqClient
+from app.core.config import settings, get_api_key_manager, get_llm_provider_manager
+from app.core.llm_provider_manager import LLMProvider
 
 
 class RAGChain:
-    """RAG chain for document-based question answering without Langchain."""
+    """RAG chain for document-based question answering with multi-provider support."""
     
     def __init__(self):
-        """Initialize RAG chain with Gemini model."""
-        # Configure Gemini API
-        genai.configure(api_key=settings.google_api_key)
+        """Initialize RAG chain with multi-provider support."""
+        # API key manager for embeddings (Gemini only)
+        self.api_key_manager = get_api_key_manager()
+        
+        # Multi-provider manager for chat completions (Gemini + Groq)
+        self.llm_provider_manager = get_llm_provider_manager()
+        
+        # Configure Gemini with first key initially (for embeddings)
+        genai.configure(api_key=self.api_key_manager.get_current_key())
         self.model = genai.GenerativeModel(settings.gemini_model)
         self.vector_store_manager = VectorStoreManager()
     
@@ -117,13 +125,48 @@ Question: {question}
 
 Answer:"""
             
-            # Generate response using Gemini
-            response = self.model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=settings.temperature,
-                    max_output_tokens=settings.max_output_tokens,
+            # Generate response using multi-provider fallback (Gemini -> Groq)
+            def _generate_gemini_response():
+                """Generate response using Gemini."""
+                provider_manager = self.llm_provider_manager.get_current_key_manager()
+                genai.configure(api_key=provider_manager.get_current_key())
+                model = genai.GenerativeModel(settings.gemini_model)
+                return model.generate_content(
+                    prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=settings.temperature,
+                        max_output_tokens=settings.max_output_tokens,
+                    )
                 )
+            
+            def _generate_groq_response():
+                """Generate response using Groq."""
+                provider_manager = self.llm_provider_manager.get_current_key_manager()
+                groq_client = GroqClient(
+                    api_key=provider_manager.get_current_key(),
+                    model=settings.groq_model
+                )
+                # Extract system prompt if present
+                system_prompt_part = None
+                user_prompt_part = prompt
+                
+                # Try to extract system prompt from prompt (if it's structured)
+                if "\n\n" in prompt:
+                    parts = prompt.split("\n\n", 1)
+                    if "System Instructions:" in parts[0] or "Organization Context:" in parts[0]:
+                        system_prompt_part = parts[0]
+                        user_prompt_part = parts[1] if len(parts) > 1 else prompt
+                
+                return groq_client.generate_content(
+                    prompt=user_prompt_part,
+                    system_prompt=system_prompt_part,
+                    temperature=settings.temperature,
+                    max_tokens=settings.max_output_tokens
+                )
+            
+            response = self.llm_provider_manager.execute_with_fallback(
+                _generate_gemini_response,
+                _generate_groq_response
             )
             
             answer = response.text if response.text else "I couldn't generate a response. Please try again."
@@ -174,13 +217,36 @@ Requirements:
 
 Title:"""
             
-            # Generate title using Gemini with lower temperature for more consistent results
-            response = self.model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=0.3,  # Lower temperature for more consistent titles
-                    max_output_tokens=50,  # Titles should be short
+            # Generate title using multi-provider fallback
+            def _generate_title_gemini():
+                """Generate title using Gemini."""
+                provider_manager = self.llm_provider_manager.get_current_key_manager()
+                genai.configure(api_key=provider_manager.get_current_key())
+                model = genai.GenerativeModel(settings.gemini_model)
+                return model.generate_content(
+                    prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=0.3,  # Lower temperature for more consistent titles
+                        max_output_tokens=50,  # Titles should be short
+                    )
                 )
+            
+            def _generate_title_groq():
+                """Generate title using Groq."""
+                provider_manager = self.llm_provider_manager.get_current_key_manager()
+                groq_client = GroqClient(
+                    api_key=provider_manager.get_current_key(),
+                    model=settings.groq_model
+                )
+                return groq_client.generate_content(
+                    prompt=prompt,
+                    temperature=0.3,
+                    max_tokens=50
+                )
+            
+            response = self.llm_provider_manager.execute_with_fallback(
+                _generate_title_gemini,
+                _generate_title_groq
             )
             
             title = response.text.strip() if response.text else question[:100]

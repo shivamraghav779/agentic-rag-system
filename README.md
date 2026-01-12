@@ -89,9 +89,20 @@ Create a `.env` file in the project root:
 DATABASE_URL=mysql+pymysql://username:password@localhost:3306/chatbot
 
 # Gemini API Configuration
+# Option 1: Single API key (deprecated, use GOOGLE_API_KEYS for fallback)
 GOOGLE_API_KEY=your_gemini_api_key_here
-GEMINI_MODEL=gemini-pro
-EMBEDDING_MODEL=models/embedding-001
+
+# Option 2: Multiple API keys with automatic fallback (recommended)
+# Comma-separated list of API keys - system will automatically switch if rate limited
+GOOGLE_API_KEYS=key1,key2,key3,key4,key5
+
+GEMINI_MODEL=gemini-2.5-flash
+EMBEDDING_MODEL=text-embedding-004
+
+# Groq API Configuration (Fallback Provider)
+# Comma-separated list of Groq API keys - used as fallback when Gemini is rate limited
+GROQ_API_KEYS=groq_key1,groq_key2,groq_key3,groq_key4,groq_key5
+GROQ_MODEL=llama-3.3-70b-versatile
 
 # JWT Configuration
 SECRET_KEY=your_secret_key_here  # Generate using: openssl rand -hex 32
