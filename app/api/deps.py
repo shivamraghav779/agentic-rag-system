@@ -2,18 +2,19 @@
 from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_access_token
-from app.db.session import get_db
+from app.db.session import async_get_db
 from app.models.user import User, UserRole
 
-# HTTP Bearer scheme for token authentication
 oauth2_scheme = HTTPBearer()
+
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(oauth2_scheme),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(async_get_db)
 ) -> User:
     """Get the current authenticated user from JWT token."""
     credentials_exception = HTTPException(
@@ -21,27 +22,27 @@ async def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
-    # Extract token string from credentials
+
     token = credentials.credentials
     payload = decode_access_token(token)
     if payload is None:
         raise credentials_exception
-    
+
     email: str = payload.get("sub")
     if email is None:
         raise credentials_exception
-    
-    user = db.query(User).filter(User.email == email).first()
+
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
     if user is None:
         raise credentials_exception
-    
+
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is inactive"
         )
-    
+
     return user
 
 
@@ -93,9 +94,6 @@ async def get_current_org_admin(
     return current_user
 
 
-
-
-# Legacy function for backward compatibility
 async def get_current_admin_user(
     current_user: User = Depends(get_current_user)
 ) -> User:

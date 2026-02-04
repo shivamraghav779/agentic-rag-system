@@ -1237,5 +1237,5 @@ Include helpful messages and call-to-action buttons.
 
 ---
 
-This guide provides everything needed to implement the frontend. For specific API details, refer to `CRUD_API_DOCUMENTATION.md`.
+This guide provides everything needed to implement the frontend. For specific API details and full flow, refer to `API_DOCUMENTATION.md`.
 

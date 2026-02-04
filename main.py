@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.db.session import init_db
+from app.db.session import init_db_async
 from app.api.v1 import api_router
 
 # Initialize FastAPI app
@@ -47,7 +47,7 @@ async def health_check():
 @app.on_event("startup")
 async def startup_event():
     """Initialize database on application startup."""
-    init_db()
+    await init_db_async()
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Script to create a super admin user in the database."""
+import argparse
 import sys
 import getpass
 from pathlib import Path
@@ -18,7 +19,8 @@ def create_super_admin_user(
     email: str,
     password: str,
     chat_limit: int = 500,
-    is_active: bool = True
+    is_active: bool = True,
+    update_existing: bool = False,
 ) -> bool:
     """Create a super admin user in the database.
     
@@ -28,36 +30,53 @@ def create_super_admin_user(
         password: Plain text password (will be hashed)
         chat_limit: Chat limit for the super admin (default: 500)
         is_active: Whether the super admin account is active (default: True)
+        update_existing: If True and username exists, update that user to superadmin with given email/password
         
     Returns:
-        True if super admin was created successfully, False otherwise
+        True if super admin was created/updated successfully, False otherwise
     """
     db: Session = SessionLocal()
     try:
         # Check if user with this email already exists
-        existing_user = db.query(User).filter(User.email == email).first()
-        if existing_user:
+        existing_by_email = db.query(User).filter(User.email == email).first()
+        if existing_by_email:
             print(f"❌ Error: User with email '{email}' already exists.")
-            if existing_user.role == UserRole.SUPER_ADMIN:
+            if existing_by_email.role == UserRole.SUPER_ADMIN:
                 print(f"   This user is already a super admin.")
             else:
                 print(f"   Would you like to make this user a super admin? (y/n): ", end="")
                 response = input().strip().lower()
                 if response == 'y':
-                    existing_user.role = UserRole.SUPER_ADMIN
-                    existing_user.is_admin = True  # Legacy flag
-                    existing_user.is_active = is_active
+                    existing_by_email.role = UserRole.SUPER_ADMIN
+                    existing_by_email.is_admin = True  # Legacy flag
+                    existing_by_email.is_active = is_active
                     if chat_limit:
-                        existing_user.chat_limit = chat_limit
+                        existing_by_email.chat_limit = chat_limit
                     db.commit()
-                    print(f"✅ User '{username}' is now a super admin.")
+                    print(f"✅ User is now a super admin.")
                     return True
             return False
         
         # Check if user with this username already exists
-        existing_username = db.query(User).filter(User.username == username).first()
-        if existing_username:
+        existing_by_username = db.query(User).filter(User.username == username).first()
+        if existing_by_username:
+            if update_existing:
+                existing_by_username.email = email
+                existing_by_username.hashed_password = get_password_hash(password)
+                existing_by_username.role = UserRole.SUPER_ADMIN
+                existing_by_username.is_admin = True
+                existing_by_username.is_active = is_active
+                existing_by_username.chat_limit = chat_limit
+                existing_by_username.organization_id = None  # SuperAdmin has no org
+                db.commit()
+                db.refresh(existing_by_username)
+                print(f"✅ Existing user '{username}' updated to super admin with given email/password.")
+                print(f"   Username: {existing_by_username.username}")
+                print(f"   Email: {existing_by_username.email}")
+                print(f"   Role: {existing_by_username.role.value}")
+                return True
             print(f"❌ Error: User with username '{username}' already exists.")
+            print(f"   To update that user to super admin with this email/password, run with --update-existing")
             return False
         
         # Hash the password
@@ -98,73 +117,68 @@ def create_super_admin_user(
 
 
 def main():
-    """Main function to interactively create a super admin user."""
+    """Main function to create a super admin user (interactive or via CLI args)."""
+    parser = argparse.ArgumentParser(description="Create a super admin user in the database.")
+    parser.add_argument("--username", "-u", type=str, help="Username for the super admin")
+    parser.add_argument("--email", "-e", type=str, help="Email for the super admin")
+    parser.add_argument("--password", "-p", type=str, help="Password (plain text; prefer env or interactive)")
+    parser.add_argument("--chat-limit", type=int, default=500, help="Chat limit (default: 500)")
+    parser.add_argument("--inactive", action="store_true", help="Create account as inactive")
+    parser.add_argument("--update-existing", action="store_true", help="If username exists, update that user to super admin with given email/password")
+    args = parser.parse_args()
+
     print("=" * 60)
     print("Create Super Admin User")
     print("=" * 60)
     print()
-    
-    # Get username
-    username = input("Enter username: ").strip()
+
+    # Username
+    username = (args.username or "").strip() if args.username else None
+    if not username:
+        username = input("Enter username: ").strip()
     if not username:
         print("❌ Username cannot be empty.")
         sys.exit(1)
-    
-    # Get email
-    email = input("Enter email: ").strip()
+
+    # Email
+    email = (args.email or "").strip() if args.email else None
+    if not email:
+        email = input("Enter email: ").strip()
     if not email:
         print("❌ Email cannot be empty.")
         sys.exit(1)
-    
-    # Validate email format (basic check)
     if "@" not in email or "." not in email.split("@")[1]:
         print("❌ Invalid email format.")
         sys.exit(1)
-    
-    # Get password
-    password = getpass.getpass("Enter password: ")
+
+    # Password
+    password = args.password
     if not password:
-        print("❌ Password cannot be empty.")
-        sys.exit(1)
-    
-    # Confirm password
-    password_confirm = getpass.getpass("Confirm password: ")
-    if password != password_confirm:
-        print("❌ Passwords do not match.")
-        sys.exit(1)
-    
-    # Get chat limit (optional)
-    chat_limit_input = input("Enter chat limit (default: 500, press Enter to use default): ").strip()
-    chat_limit = 500  # Default
-    if chat_limit_input:
-        try:
-            chat_limit = int(chat_limit_input)
-            if chat_limit < 1:
-                print("⚠️  Warning: Chat limit must be at least 1. Using default value 500.")
-                chat_limit = 500
-        except ValueError:
-            print("⚠️  Warning: Invalid chat limit. Using default value 500.")
-            chat_limit = 500
-    
-    # Get active status (optional)
-    is_active_input = input("Should the super admin account be active? (y/n, default: y): ").strip().lower()
-    is_active = True  # Default
-    if is_active_input and is_active_input != 'y':
-        is_active = False
-    
+        password = getpass.getpass("Enter password: ")
+        if not password:
+            print("❌ Password cannot be empty.")
+            sys.exit(1)
+        password_confirm = getpass.getpass("Confirm password: ")
+        if password != password_confirm:
+            print("❌ Passwords do not match.")
+            sys.exit(1)
+
+    chat_limit = args.chat_limit if args.chat_limit and args.chat_limit >= 1 else 500
+    is_active = not args.inactive
+
     print()
     print("Creating super admin user...")
     print()
-    
-    # Create super admin user
+
     success = create_super_admin_user(
         username=username,
         email=email,
         password=password,
         chat_limit=chat_limit,
-        is_active=is_active
+        is_active=is_active,
+        update_existing=getattr(args, "update_existing", False),
     )
-    
+
     if success:
         print()
         print("=" * 60)

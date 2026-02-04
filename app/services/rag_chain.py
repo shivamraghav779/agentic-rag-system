@@ -4,25 +4,32 @@ from datetime import datetime
 import google.generativeai as genai
 from app.services.vector_store import VectorStoreManager
 from app.services.groq_client import GroqClient
+from app.services.rag_enhancements import QueryProcessor, Reranker, PromptCompressor
 from app.core.config import settings, get_api_key_manager, get_llm_provider_manager
 from app.core.llm_provider_manager import LLMProvider
 
 
 class RAGChain:
-    """RAG chain for document-based question answering with multi-provider support."""
-    
+    """RAG chain for document-based question answering with multi-provider support.
+    Pipeline aligned with notebook: pre-retrieval (query rewrite/expansion),
+    retrieval, post-retrieval (reranking, optional prompt compression), then generation.
+    """
+
     def __init__(self):
         """Initialize RAG chain with multi-provider support."""
         # API key manager for embeddings (Gemini only)
         self.api_key_manager = get_api_key_manager()
-        
+
         # Multi-provider manager for chat completions (Gemini + Groq)
         self.llm_provider_manager = get_llm_provider_manager()
-        
+
         # Configure Gemini with first key initially (for embeddings)
         genai.configure(api_key=self.api_key_manager.get_current_key())
         self.model = genai.GenerativeModel(settings.gemini_model)
         self.vector_store_manager = VectorStoreManager()
+
+        # Post-retrieval reranker (loads cross-encoder once if enabled)
+        self.reranker = Reranker()
     
     def format_context(self, documents: List) -> str:
         """Format retrieved documents into context string."""
@@ -36,14 +43,41 @@ class RAGChain:
         """Format conversation history into a readable context string."""
         if not history:
             return ""
-        
+
         history_parts = ["Previous conversation:"]
         for i, chat in enumerate(history, 1):
             history_parts.append(f"Q{i}: {chat.get('question', '')}")
             history_parts.append(f"A{i}: {chat.get('answer', '')}")
-        
+
         return "\n".join(history_parts)
-    
+
+    def _llm_generate(self, prompt: str, max_tokens: int = 1024) -> str:
+        """Generate text from prompt using Gemini/Groq fallback. Used for query rewrite, expansion, and compression."""
+        def _gemini():
+            pm = self.llm_provider_manager.get_current_key_manager()
+            genai.configure(api_key=pm.get_current_key())
+            model = genai.GenerativeModel(settings.gemini_model)
+            r = model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.3,
+                    max_output_tokens=max_tokens,
+                ),
+            )
+            return r
+
+        def _groq():
+            pm = self.llm_provider_manager.get_current_key_manager()
+            groq_client = GroqClient(api_key=pm.get_current_key(), model=settings.groq_model)
+            return groq_client.generate_content(
+                prompt=prompt,
+                temperature=0.3,
+                max_tokens=max_tokens,
+            )
+
+        response = self.llm_provider_manager.execute_with_fallback(_gemini, _groq)
+        return response.text or ""
+
     def query(
         self, 
         vector_store_path: str, 
@@ -62,17 +96,39 @@ class RAGChain:
             conversation_history: List of previous Q&A pairs for context (optional)
         """
         try:
-            # Retrieve relevant documents
-            relevant_docs = self.vector_store_manager.similarity_search(
-                vector_store_path, question, k=settings.retrieval_k
+            # Pre-retrieval: query rewriting and expansion (notebook-aligned)
+            query_processor = QueryProcessor(llm_callable=self._llm_generate)
+            processed_query = query_processor.process_query(question)
+
+            # Retrieval: fetch more when reranking is enabled, then trim
+            k_retrieve = (
+                settings.retrieval_k_initial
+                if settings.enable_reranking
+                else settings.retrieval_k
             )
-            
+            relevant_docs = self.vector_store_manager.similarity_search(
+                vector_store_path, processed_query, k=k_retrieve
+            )
+
             if not relevant_docs:
                 return {
                     "answer": "No relevant information found in the documents.",
-                    "source_documents": []
+                    "source_documents": [],
                 }
-            
+
+            # Post-retrieval: reranking (notebook-aligned)
+            if settings.enable_reranking:
+                relevant_docs = self.reranker.rerank(
+                    question, relevant_docs, top_k=settings.retrieval_k_final
+                )
+
+            # Post-retrieval: optional prompt compression (notebook-aligned)
+            if settings.enable_prompt_compression:
+                prompt_compressor = PromptCompressor(llm_callable=self._llm_generate)
+                relevant_docs = prompt_compressor.compress_documents(
+                    relevant_docs, question
+                )
+
             # Format context from retrieved documents
             context = self.format_context(relevant_docs)
             

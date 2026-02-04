@@ -6,8 +6,15 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     
-    # Database
+    # Database (sync for Alembic; use async_database_url for app)
     database_url: str = "mysql+pymysql://user:password@localhost:3306/chatbot_db"
+
+    @property
+    def async_database_url(self) -> str:
+        """URL for async driver (asyncmy)."""
+        if "pymysql" in self.database_url:
+            return self.database_url.replace("mysql+pymysql://", "mysql+asyncmy://", 1)
+        return self.database_url.replace("mysql://", "mysql+asyncmy://", 1)
     
     # Gemini API
     google_api_key: str = ""  # Single key (deprecated, use google_api_keys)
@@ -24,8 +31,20 @@ class Settings(BaseSettings):
     max_output_tokens: int = 2048
     
     # Retrieval Configuration
-    retrieval_k: int = 4  # Number of documents to retrieve
+    retrieval_k: int = 4  # Number of documents to retrieve (used when reranking disabled)
+    retrieval_k_initial: int = 10  # Initial retrieve count before reranking (when reranking enabled)
+    retrieval_k_final: int = 5  # Number of documents after reranking
     source_doc_preview_length: int = 500  # Characters to show in source preview
+
+    # Pre-retrieval processing (query rewriting & expansion)
+    enable_query_rewriting: bool = True
+    enable_query_expansion: bool = True
+
+    # Post-retrieval processing (reranking & prompt compression)
+    enable_reranking: bool = True
+    enable_prompt_compression: bool = True
+    reranking_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    compression_ratio: float = 0.7  # Compress context to this fraction (0.0-1.0)
     
     # Prompt Configuration
     default_instruction_prompt: str = """Please provide a comprehensive answer based on the context provided. If the context doesn't contain enough information to answer the question, say so clearly. Use the context to provide accurate and relevant information."""
@@ -36,9 +55,13 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7  # Refresh tokens expire in 7 days
     
-    # File paths
+    # File paths (legacy flat layout; new uploads use per-org artifacts when available)
     upload_dir: str = "./uploads"
     vector_store_dir: str = "./vector_stores"
+    sqlite_store_dir: str = "./sqlite_stores"
+
+    # Per-organization artifact root: artifacts/{organization_id}/vector_store|structured_data|uploads
+    artifacts_base_dir: str = "./artifacts"
     
     # Chunking configuration
     chunk_size: int = 1000
@@ -59,6 +82,7 @@ settings = Settings()
 # Ensure directories exist
 Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
 Path(settings.vector_store_dir).mkdir(parents=True, exist_ok=True)
+Path(settings.sqlite_store_dir).mkdir(parents=True, exist_ok=True)
 
 # Initialize Multi-Provider LLM Manager (lazy initialization to avoid circular imports)
 llm_provider_manager = None

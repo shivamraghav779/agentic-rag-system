@@ -1,9 +1,9 @@
 """Statistics and dashboard API routes."""
 from typing import Optional
 from fastapi import APIRouter, Depends, status, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db
+from app.db.session import async_get_db
 from app.models.user import User
 from app.api.deps import get_current_active_user, get_current_admin
 from app.schemas.statistics import (
@@ -18,7 +18,7 @@ router = APIRouter()
 
 @router.get("/user", response_model=UserStatistics)
 async def get_user_statistics(
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(async_get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """
@@ -39,7 +39,7 @@ async def get_user_statistics(
 @router.get("/organization/{organization_id}", response_model=OrganizationStatistics)
 async def get_organization_statistics(
     organization_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(async_get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """
@@ -66,7 +66,7 @@ async def get_organization_statistics(
 
 @router.get("/admin", response_model=AdminStatistics)
 async def get_admin_statistics(
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(async_get_db),
     current_user: User = Depends(get_current_admin)
 ):
     """

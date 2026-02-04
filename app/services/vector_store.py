@@ -1,6 +1,6 @@
 """FAISS vector store management."""
 from pathlib import Path
-from typing import List
+from typing import List, Optional, Union
 from langchain_core.documents import Document
 from langchain_community.vectorstores import FAISS
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
@@ -9,34 +9,37 @@ from app.core.config import settings, get_api_key_manager
 
 class VectorStoreManager:
     """Manages FAISS vector stores for documents."""
-    
+
     def __init__(self):
         """Initialize with Gemini embeddings."""
         self.api_key_manager = get_api_key_manager()
-        
-        # Initialize embeddings with first key
         self.embeddings = GoogleGenerativeAIEmbeddings(
             model=settings.embedding_model,
             google_api_key=self.api_key_manager.get_current_key()
         )
         self.base_dir = Path(settings.vector_store_dir)
         self.base_dir.mkdir(parents=True, exist_ok=True)
-    
-    def create_vector_store(self, documents: List[Document], store_name: str) -> str:
-        """Create a new FAISS vector store from documents."""
+
+    def create_vector_store(
+        self,
+        documents: List[Document],
+        store_name: str,
+        base_dir: Optional[Union[str, Path]] = None,
+    ) -> str:
+        """Create a new FAISS vector store from documents.
+        base_dir: If set (e.g. per-org path), store is created under it; else uses default vector_store_dir.
+        """
+        parent = Path(base_dir) if base_dir is not None else self.base_dir
+        parent.mkdir(parents=True, exist_ok=True)
+
         def _create_store():
-            # Reinitialize embeddings with current key (in case it changed)
             embeddings = GoogleGenerativeAIEmbeddings(
                 model=settings.embedding_model,
                 google_api_key=self.api_key_manager.get_current_key()
             )
-            # Create FAISS vector store
             vector_store = FAISS.from_documents(documents, embeddings)
-            
-            # Save to disk
-            store_path = self.base_dir / store_name
+            store_path = parent / store_name
             vector_store.save_local(str(store_path))
-            
             return str(store_path)
         
         try:

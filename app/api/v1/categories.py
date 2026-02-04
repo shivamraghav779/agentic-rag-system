@@ -1,9 +1,9 @@
 """Document category description API routes."""
 from typing import List
 from fastapi import APIRouter, Depends, status, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db
+from app.db.session import async_get_db
 from app.models.user import User
 from app.api.deps import get_current_active_user
 from app.schemas.document_category_description import (
@@ -24,7 +24,7 @@ router = APIRouter()
 async def create_category_description(
     organization_id: int,
     category_data: DocumentCategoryDescriptionCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(async_get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """
@@ -48,7 +48,7 @@ async def list_category_descriptions(
     organization_id: int,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(async_get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """
@@ -72,7 +72,7 @@ async def list_category_descriptions(
 async def get_category_description(
     organization_id: int,
     category: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(async_get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """
@@ -96,7 +96,7 @@ async def update_category_description(
     organization_id: int,
     category: str,
     category_data: DocumentCategoryDescriptionUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(async_get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """
@@ -120,7 +120,7 @@ async def update_category_description(
 async def delete_category_description(
     organization_id: int,
     category: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(async_get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """

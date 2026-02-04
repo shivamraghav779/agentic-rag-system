@@ -4,9 +4,14 @@ import uuid
 from pathlib import Path
 from typing import List, Optional
 from fastapi import HTTPException, status, UploadFile
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.artifact_paths import (
+    get_organization_structured_data_dir,
+    get_organization_upload_dir,
+    get_organization_vector_store_dir,
+)
 from app.crud.document import document as document_crud
 from app.crud.organization import organization as organization_crud
 from app.models.document import Document
@@ -14,12 +19,16 @@ from app.models.user import User, UserRole
 from app.schemas.document import UploadResponse
 from app.services.document_processor import DocumentProcessor
 from app.services.vector_store import VectorStoreManager
+from app.services.structured_data_processor import process_structured
+
+# File types that use hybrid SQL + RAG pipeline (orchestrator)
+STRUCTURED_FILE_TYPES = frozenset({"csv", "xlsx", "xls", "db", "sqlite"})
 
 
 class DocumentService:
     """Service for document operations."""
-    
-    def __init__(self, db: Session):
+
+    def __init__(self, db: AsyncSession):
         """Initialize document service with database session."""
         self.db = db
         self.document_crud = document_crud
@@ -68,7 +77,7 @@ class DocumentService:
                 )
         
         # Verify organization exists
-        org = self.organization_crud.get(self.db, id=organization_id)
+        org = await self.organization_crud.get(self.db, id=organization_id)
         if not org:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -79,37 +88,58 @@ class DocumentService:
         file_type = self._validate_file_type(file)
         
         try:
-            # Generate unique filename
             file_id = str(uuid.uuid4())
             file_extension = Path(file.filename).suffix
             safe_filename = f"{file_id}{file_extension}"
-            file_path = os.path.join(settings.upload_dir, safe_filename)
+            # Per-org layout: artifacts/{org_id}/uploads|vector_store|structured_data
+            org_upload_dir = get_organization_upload_dir(organization_id)
+            file_path = str(org_upload_dir / safe_filename)
 
-            # Save uploaded file
             content = await file.read()
             with open(file_path, "wb") as buffer:
                 buffer.write(content)
-            
             file_size = len(content)
-            
-            # Process document
-            documents = self.document_processor.process_document(file_path, file_type)
-            chunk_count = len(documents)
-            
-            if chunk_count == 0:
-                os.remove(file_path)
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Document could not be processed or is empty"
-                )
-            
-            # Create vector store
             vector_store_name = f"doc_{file_id}"
-            vector_store_path = self.vector_store_manager.create_vector_store(
-                documents, vector_store_name
-            )
-            
-            # Save to database
+            sqlite_path = None
+            org_vector_dir = get_organization_vector_store_dir(organization_id)
+            org_structured_dir = get_organization_structured_data_dir(organization_id)
+
+            if file_type in STRUCTURED_FILE_TYPES:
+                sqlite_path, documents = process_structured(
+                    file_path,
+                    file_type,
+                    vector_store_name,
+                    output_dir=str(org_structured_dir),
+                )
+                chunk_count = len(documents)
+                if chunk_count == 0:
+                    if sqlite_path and os.path.exists(sqlite_path):
+                        os.remove(sqlite_path)
+                    os.remove(file_path)
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Structured file could not be processed or is empty",
+                    )
+                vector_store_path = self.vector_store_manager.create_vector_store(
+                    documents,
+                    vector_store_name,
+                    base_dir=str(org_vector_dir),
+                )
+            else:
+                documents = self.document_processor.process_document(file_path, file_type)
+                chunk_count = len(documents)
+                if chunk_count == 0:
+                    os.remove(file_path)
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Document could not be processed or is empty",
+                    )
+                vector_store_path = self.vector_store_manager.create_vector_store(
+                    documents,
+                    vector_store_name,
+                    base_dir=str(org_vector_dir),
+                )
+
             document_dict = {
                 "user_id": user.id,
                 "organization_id": organization_id,
@@ -120,10 +150,12 @@ class DocumentService:
                 "file_size": file_size,
                 "chunk_count": chunk_count,
                 "category": category,
-                "version": 1
+                "version": 1,
             }
-            
-            db_document = self.document_crud.create_from_dict(self.db, obj_dict=document_dict)
+            if sqlite_path is not None:
+                document_dict["sqlite_path"] = sqlite_path
+
+            db_document = await self.document_crud.create_from_dict(self.db, obj_dict=document_dict)
             
             return UploadResponse(
                 document_id=db_document.id,
@@ -184,16 +216,16 @@ class DocumentService:
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied to this organization"
                 )
-            return self.document_crud.get_by_organization(
+            return await self.document_crud.get_by_organization(
                 self.db,
                 organization_id=organization_id,
                 category=category,
                 user=user
             )
-        
+
         # Get user's organization documents
         if user.organization_id:
-            return self.document_crud.get_by_organization(
+            return await self.document_crud.get_by_organization(
                 self.db,
                 organization_id=user.organization_id,
                 category=category,
@@ -223,22 +255,19 @@ class DocumentService:
                 detail="Private users cannot access documents. You must be part of an organization."
             )
         
-        document = self.document_crud.get(self.db, id=document_id)
+        document = await self.document_crud.get(self.db, id=document_id)
         if not document:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Document not found"
             )
-        
-        # Check access
         if not self.document_crud.can_access(document, user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied to this document"
             )
-        
         return document
-    
+
     async def delete_document(self, document_id: int, user: User) -> None:
         """
         Delete a document.
@@ -257,14 +286,12 @@ class DocumentService:
                 detail="Private users cannot delete documents. You must be part of an organization."
             )
         
-        document = self.document_crud.get(self.db, id=document_id)
+        document = await self.document_crud.get(self.db, id=document_id)
         if not document:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Document not found"
             )
-        
-        # Check organization access
         if not self.document_crud.can_access(document, user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -279,29 +306,32 @@ class DocumentService:
             )
         
         try:
-            # Store paths before deletion
             vector_store_path = document.vector_store_path
             file_path = document.file_path
-            
-            # Delete from database
-            self.document_crud.delete(self.db, id=document_id)
-            
-            # Delete vector store
+            sqlite_path = getattr(document, "sqlite_path", None)
+
+            await self.document_crud.delete(self.db, id=document_id)
+
             try:
                 if vector_store_path:
                     self.vector_store_manager.delete_vector_store(vector_store_path)
             except Exception as e:
                 print(f"Warning: Could not delete vector store at {vector_store_path}: {str(e)}")
-            
-            # Delete uploaded file
+
             try:
                 if file_path and os.path.exists(file_path):
                     os.remove(file_path)
             except Exception as e:
                 print(f"Warning: Could not delete file at {file_path}: {str(e)}")
+
+            if sqlite_path and os.path.exists(sqlite_path):
+                try:
+                    os.remove(sqlite_path)
+                except Exception as e:
+                    print(f"Warning: Could not delete SQLite at {sqlite_path}: {str(e)}")
         
         except Exception as e:
-            self.db.rollback()
+            await self.db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error deleting document: {str(e)}"
@@ -310,40 +340,43 @@ class DocumentService:
     def _validate_file_type(self, file: UploadFile) -> str:
         """
         Validate and determine file type.
-        
-        Args:
-            file: Uploaded file
-            
-        Returns:
-            File type string
-            
-        Raises:
-            HTTPException: If file type is unsupported
+        Supported: PDF, DOCX, TXT, HTML, MD, Excel (xlsx/xls), CSV, SQLite (db/sqlite).
         """
-        allowed_types = {
-            'application/pdf': 'pdf',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
-            'text/plain': 'txt',
-            'text/html': 'html'
+        allowed_mime = {
+            "application/pdf": "pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+            "text/plain": "txt",
+            "text/html": "html",
+            "text/csv": "csv",
+            "application/vnd.ms-excel": "xls",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+            "application/octet-stream": None,  # infer from extension
         }
-        
-        file_type = allowed_types.get(file.content_type)
+        file_type = allowed_mime.get(file.content_type)
         if not file_type:
-            # Try to infer from extension
-            filename_lower = file.filename.lower()
-            if filename_lower.endswith('.pdf'):
-                file_type = 'pdf'
-            elif filename_lower.endswith(('.docx', '.doc')):
-                file_type = 'docx'
-            elif filename_lower.endswith('.txt'):
-                file_type = 'txt'
-            elif filename_lower.endswith(('.html', '.htm')):
-                file_type = 'html'
+            filename_lower = (file.filename or "").lower()
+            if filename_lower.endswith(".pdf"):
+                file_type = "pdf"
+            elif filename_lower.endswith((".docx", ".doc")):
+                file_type = "docx"
+            elif filename_lower.endswith(".txt"):
+                file_type = "txt"
+            elif filename_lower.endswith((".html", ".htm")):
+                file_type = "html"
+            elif filename_lower.endswith((".md", ".markdown")):
+                file_type = "md"
+            elif filename_lower.endswith(".csv"):
+                file_type = "csv"
+            elif filename_lower.endswith(".xlsx"):
+                file_type = "xlsx"
+            elif filename_lower.endswith(".xls"):
+                file_type = "xls"
+            elif filename_lower.endswith((".db", ".sqlite", ".sqlite3")):
+                file_type = "db"
             else:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Unsupported file type. Supported: PDF, DOCX, TXT, HTML"
+                    detail="Unsupported file type. Supported: PDF, DOCX, TXT, HTML, MD, Excel (xlsx/xls), CSV, SQLite (db/sqlite)",
                 )
-        
         return file_type
 

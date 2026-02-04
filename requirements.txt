@@ -4,8 +4,9 @@ uvicorn[standard]
 python-multipart
 
 # Database
-sqlalchemy
+sqlalchemy[asyncio]
 pymysql
+asyncmy
 alembic
 
 # Langchain and AI
@@ -21,9 +22,15 @@ python-docx
 beautifulsoup4
 lxml
 unstructured
+# Structured data (Excel, CSV, SQLite) for hybrid SQL + RAG
+pandas
+openpyxl
 
 # Vector store
 faiss-cpu
+
+# RAG enhancements (reranking with cross-encoder)
+sentence-transformers
 
 # Authentication
 python-jose[cryptography]

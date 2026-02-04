@@ -236,7 +236,7 @@ Once the server is running, you can access:
 - `POST /admins` - Create Admin
 
 For detailed API documentation, see:
-- **Complete API Docs**: `CRUD_API_DOCUMENTATION.md`
+- **Complete API Docs**: `API_DOCUMENTATION.md`
 - **Frontend Guide**: `FRONTEND_IMPLEMENTATION_GUIDE.md`
 
 ## 📁 Project Structure
@@ -314,7 +314,7 @@ chatbot/
 │
 └── Documentation/
     ├── README.md                      # This file
-    ├── CRUD_API_DOCUMENTATION.md      # Complete API documentation
+    ├── API_DOCUMENTATION.md           # Full API & flow for UI implementation
     ├── FRONTEND_IMPLEMENTATION_GUIDE.md # Frontend developer guide
     ├── PROJECT_ARCHITECTURE.md        # System architecture
     ├── MULTI_TENANCY.md               # Multi-tenancy guide
@@ -498,7 +498,7 @@ alembic downgrade -1
 
 ## 📚 Documentation
 
-- **API Documentation**: `CRUD_API_DOCUMENTATION.md` - Complete API reference
+- **API Documentation**: `API_DOCUMENTATION.md` - Full API and flow for UI implementation
 - **Frontend Guide**: `FRONTEND_IMPLEMENTATION_GUIDE.md` - Frontend developer guide with wireframes
 - **Architecture**: `PROJECT_ARCHITECTURE.md` - System architecture details
 - **Multi-Tenancy**: `MULTI_TENANCY.md` - Multi-tenancy implementation guide

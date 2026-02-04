@@ -1,11 +1,10 @@
 """Document management API routes."""
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, File, UploadFile, Depends, status, Query
 from fastapi.responses import Response
-from sqlalchemy.orm import Session
-from typing import Optional
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db
+from app.db.session import async_get_db
 from app.models.user import User
 from app.api.deps import get_current_active_user
 from app.schemas.document import DocumentInfo, UploadResponse
@@ -19,15 +18,18 @@ async def upload_document(
     file: UploadFile = File(...),
     organization_id: Optional[int] = Query(None, description="Organization ID (defaults to user's organization)"),
     category: Optional[str] = Query(None, description="Document category (organization-specific)"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(async_get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """
     Upload and process a document.
-    
-    Supported formats: PDF, DOCX, TXT, HTML
-    
-    Documents are scoped to organizations. Users can only upload to their organization.
+
+    Supported formats:
+    - Unstructured (RAG only): PDF, DOCX, TXT, HTML, MD
+    - Structured (Hybrid SQL + RAG): Excel (xlsx/xls), CSV, SQLite (db/sqlite)
+
+    For structured files, the orchestrator will route queries to SQL or RAG as appropriate.
+    Documents are scoped to organizations.
     """
     document_service = DocumentService(db)
     return await document_service.upload_document(
@@ -42,7 +44,7 @@ async def upload_document(
 async def list_documents(
     organization_id: int = None,
     category: Optional[str] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(async_get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """List documents based on user's organization access."""
@@ -57,7 +59,7 @@ async def list_documents(
 @router.get("/{document_id}", response_model=DocumentInfo)
 async def get_document(
     document_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(async_get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """Get information about a specific document."""
@@ -68,7 +70,7 @@ async def get_document(
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_document(
     document_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(async_get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """Delete a document and its associated vector store."""

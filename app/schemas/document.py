@@ -15,6 +15,7 @@ class DocumentInfo(BaseModel):
     upload_date: datetime
     file_size: Optional[int]
     chunk_count: int
+    sqlite_path: Optional[str] = None  # Set for structured docs (Excel/CSV/DB) — hybrid SQL + RAG
 
     @field_validator('version', mode='before')
     @classmethod

@@ -1,8 +1,8 @@
 """Authentication API routes."""
 from fastapi import APIRouter, Depends, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db
+from app.db.session import async_get_db
 from app.models.user import User
 from app.api.deps import get_current_active_user
 from app.schemas.user import UserSignup, UserLogin, Token, UserResponse, SystemPromptUpdate, RefreshTokenRequest
@@ -14,7 +14,7 @@ router = APIRouter()
 @router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def signup(
     user_data: UserSignup,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(async_get_db)
 ):
     """Register a new user."""
     auth_service = AuthService(db)
@@ -24,7 +24,7 @@ async def signup(
 @router.post("/login", response_model=Token)
 async def login(
     user_credentials: UserLogin,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(async_get_db)
 ):
     """Login and get access token."""
     auth_service = AuthService(db)
@@ -42,7 +42,7 @@ async def get_current_user_info(
 @router.post("/refresh", response_model=Token)
 async def refresh_token(
     refresh_data: RefreshTokenRequest,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(async_get_db)
 ):
     """Refresh access token using refresh token."""
     auth_service = AuthService(db)
@@ -52,7 +52,7 @@ async def refresh_token(
 @router.patch("/me/system-prompt", response_model=UserResponse)
 async def update_system_prompt(
     prompt_data: SystemPromptUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(async_get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """Update the current user's system prompt."""

@@ -1,45 +1,57 @@
 """CRUD operations for document category descriptions."""
-from typing import Optional
-from sqlalchemy.orm import Session
+from typing import Optional, List
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud.base import CRUDBase
 from app.models.document_category_description import DocumentCategoryDescription
 from app.schemas.document_category_description import (
     DocumentCategoryDescriptionCreate,
-    DocumentCategoryDescriptionUpdate
+    DocumentCategoryDescriptionUpdate,
 )
 
 
-class CRUDDocumentCategoryDescription(CRUDBase[DocumentCategoryDescription, DocumentCategoryDescriptionCreate, DocumentCategoryDescriptionUpdate]):
+class CRUDDocumentCategoryDescription(
+    CRUDBase[
+        DocumentCategoryDescription,
+        DocumentCategoryDescriptionCreate,
+        DocumentCategoryDescriptionUpdate,
+    ]
+):
     """CRUD operations for document category descriptions."""
-    
-    def get_by_organization_and_category(
+
+    async def get_by_organization_and_category(
         self,
-        db: Session,
+        db: AsyncSession,
         *,
         organization_id: int,
         category: str
     ) -> Optional[DocumentCategoryDescription]:
         """Get category description for a specific organization and category."""
-        return db.query(DocumentCategoryDescription).filter(
-            DocumentCategoryDescription.organization_id == organization_id,
-            DocumentCategoryDescription.category == category
-        ).first()
-    
-    def get_by_organization(
+        result = await db.execute(
+            select(DocumentCategoryDescription).where(
+                DocumentCategoryDescription.organization_id == organization_id,
+                DocumentCategoryDescription.category == category
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def get_by_organization(
         self,
-        db: Session,
+        db: AsyncSession,
         *,
         organization_id: int,
         skip: int = 0,
         limit: int = 100
-    ):
+    ) -> List[DocumentCategoryDescription]:
         """Get all category descriptions for an organization."""
-        return db.query(DocumentCategoryDescription).filter(
-            DocumentCategoryDescription.organization_id == organization_id
-        ).offset(skip).limit(limit).all()
+        result = await db.execute(
+            select(DocumentCategoryDescription)
+            .where(DocumentCategoryDescription.organization_id == organization_id)
+            .offset(skip)
+            .limit(limit)
+        )
+        return list(result.scalars().all())
 
 
-# Create instance
 document_category_description = CRUDDocumentCategoryDescription(DocumentCategoryDescription)
-

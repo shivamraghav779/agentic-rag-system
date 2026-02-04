@@ -2,8 +2,8 @@
 from typing import Any, Dict, Generic, List, Optional, Type, TypeVar, Union
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from sqlalchemy import select, func, delete
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import Base
 
@@ -13,59 +13,54 @@ UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
 
 
 class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
-    """Base CRUD class with common database operations."""
-    
+    """Base CRUD class with common async database operations."""
+
     def __init__(self, model: Type[ModelType]):
-        """
-        Initialize CRUD object with a model.
-        
-        Args:
-            model: SQLAlchemy model class
-        """
         self.model = model
-    
-    def get(self, db: Session, id: Any) -> Optional[ModelType]:
+
+    async def get(self, db: AsyncSession, *, id: Any) -> Optional[ModelType]:
         """Get a single record by ID."""
-        return db.query(self.model).filter(self.model.id == id).first()
-    
-    def get_multi(
-        self, 
-        db: Session, 
-        *, 
-        skip: int = 0, 
+        result = await db.execute(select(self.model).where(self.model.id == id))
+        return result.scalar_one_or_none()
+
+    async def get_multi(
+        self,
+        db: AsyncSession,
+        *,
+        skip: int = 0,
         limit: int = 100,
         filters: Optional[Dict[str, Any]] = None
     ) -> List[ModelType]:
         """Get multiple records with optional filtering."""
-        query = db.query(self.model)
-        
+        query = select(self.model)
         if filters:
             for key, value in filters.items():
                 if hasattr(self.model, key):
-                    query = query.filter(getattr(self.model, key) == value)
-        
-        return query.offset(skip).limit(limit).all()
-    
-    def create(self, db: Session, *, obj_in: CreateSchemaType) -> ModelType:
+                    query = query.where(getattr(self.model, key) == value)
+        query = query.offset(skip).limit(limit)
+        result = await db.execute(query)
+        return list(result.scalars().all())
+
+    async def create(self, db: AsyncSession, *, obj_in: CreateSchemaType) -> ModelType:
         """Create a new record."""
         obj_in_data = jsonable_encoder(obj_in)
         db_obj = self.model(**obj_in_data)
         db.add(db_obj)
-        db.commit()
-        db.refresh(db_obj)
+        await db.commit()
+        await db.refresh(db_obj)
         return db_obj
-    
-    def create_from_dict(self, db: Session, *, obj_dict: Dict[str, Any]) -> ModelType:
+
+    async def create_from_dict(self, db: AsyncSession, *, obj_dict: Dict[str, Any]) -> ModelType:
         """Create a new record from a dictionary."""
         db_obj = self.model(**obj_dict)
         db.add(db_obj)
-        db.commit()
-        db.refresh(db_obj)
+        await db.commit()
+        await db.refresh(db_obj)
         return db_obj
-    
-    def update(
+
+    async def update(
         self,
-        db: Session,
+        db: AsyncSession,
         *,
         db_obj: ModelType,
         obj_in: Union[UpdateSchemaType, Dict[str, Any]]
@@ -75,33 +70,29 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         if isinstance(obj_in, dict):
             update_data = obj_in
         else:
-            update_data = obj_in.dict(exclude_unset=True)
-        
+            update_data = obj_in.model_dump(exclude_unset=True)
         for field in obj_data:
             if field in update_data:
                 setattr(db_obj, field, update_data[field])
-        
         db.add(db_obj)
-        db.commit()
-        db.refresh(db_obj)
+        await db.commit()
+        await db.refresh(db_obj)
         return db_obj
-    
-    def delete(self, db: Session, *, id: int) -> ModelType:
+
+    async def delete(self, db: AsyncSession, *, id: int) -> Optional[ModelType]:
         """Delete a record by ID."""
-        obj = db.query(self.model).filter(self.model.id == id).first()
+        obj = await self.get(db, id=id)
         if obj:
-            db.delete(obj)
-            db.commit()
+            await db.delete(obj)
+            await db.commit()
         return obj
-    
-    def count(self, db: Session, *, filters: Optional[Dict[str, Any]] = None) -> int:
+
+    async def count(self, db: AsyncSession, *, filters: Optional[Dict[str, Any]] = None) -> int:
         """Count records with optional filtering."""
-        query = db.query(self.model)
-        
+        query = select(func.count()).select_from(self.model)
         if filters:
             for key, value in filters.items():
                 if hasattr(self.model, key):
-                    query = query.filter(getattr(self.model, key) == value)
-        
-        return query.count()
-
+                    query = query.where(getattr(self.model, key) == value)
+        result = await db.execute(query)
+        return result.scalar() or 0

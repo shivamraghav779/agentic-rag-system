@@ -1,9 +1,9 @@
 """Organization management API routes."""
 from typing import List, Optional
 from fastapi import APIRouter, Depends, status, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db
+from app.db.session import async_get_db
 from app.models.user import User, UserRole
 from app.api.deps import (
     get_current_active_user,
@@ -25,7 +25,7 @@ router = APIRouter()
 @router.post("", response_model=OrganizationResponse, status_code=status.HTTP_201_CREATED)
 async def create_organization(
     org_data: OrganizationCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(async_get_db),
     current_user: User = Depends(get_current_admin)
 ):
     """Create a new organization (SuperAdmin or Admin only).
@@ -40,7 +40,7 @@ async def create_organization(
 async def list_organizations(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(async_get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """List organizations based on user role."""
@@ -51,7 +51,7 @@ async def list_organizations(
 @router.get("/{organization_id}", response_model=OrganizationResponse)
 async def get_organization(
     organization_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(async_get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """Get organization details."""
@@ -63,7 +63,7 @@ async def get_organization(
 async def update_organization(
     organization_id: int,
     org_data: OrganizationUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(async_get_db),
     current_user: User = Depends(get_current_admin)
 ):
     """Update an organization (SuperAdmin or Admin only)."""
@@ -78,7 +78,7 @@ async def update_organization(
 @router.delete("/{organization_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_organization(
     organization_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(async_get_db),
     current_user: User = Depends(get_current_super_admin)
 ):
     """Delete an organization (SuperAdmin only)."""
@@ -95,7 +95,7 @@ async def list_organization_users(
     role: Optional[UserRole] = Query(None, description="Filter by role"),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(async_get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """List users in an organization."""
@@ -113,7 +113,7 @@ async def list_organization_users(
 async def create_organization_user(
     organization_id: int,
     user_data: UserCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(async_get_db),
     current_user: User = Depends(get_current_org_admin)
 ):
     """Create a user in an organization (Org Admin, Admin, or SuperAdmin only)."""

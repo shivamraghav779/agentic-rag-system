@@ -18,6 +18,7 @@ class Document(Base):
     file_type = Column(String(50), nullable=False)  # pdf, docx, txt, html
     file_path = Column(String(1000), nullable=False)
     vector_store_path = Column(String(1000), nullable=False)
+    sqlite_path = Column(String(1000), nullable=True)  # For structured data (Excel/CSV/DB): path to SQLite DB
     upload_date = Column(DateTime, default=datetime.utcnow)
     file_size = Column(Integer)  # Size in bytes
     chunk_count = Column(Integer, default=0)

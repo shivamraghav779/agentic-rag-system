@@ -248,6 +248,16 @@ chatbot/
 └── alembic.ini                 # Alembic configuration
 ```
 
+### Artifacts (per-organization storage)
+
+Vector stores, structured data (SQLite), and uploads are stored **per organization** under `artifacts/{organization_id}/`:
+
+- `artifacts/{org_id}/uploads/` — raw uploaded files
+- `artifacts/{org_id}/vector_store/` — FAISS indexes (one folder per document)
+- `artifacts/{org_id}/structured_data/` — SQLite DBs from Excel/CSV/DB uploads
+
+See **ARTIFACTS_AND_PIPELINE.md** for the full layout, upload/chat pipeline, and robustness suggestions.
+
 ## Data Flow
 
 ### Document Upload Flow
@@ -495,7 +505,7 @@ See `.env` file for configuration:
 
 - **Swagger UI**: Available at `/docs` (when running)
 - **ReDoc**: Available at `/redoc` (when running)
-- **Markdown Docs**: See `CRUD_API_DOCUMENTATION.md`
+- **Markdown Docs**: See `API_DOCUMENTATION.md`
 
 ## Contributing
 
