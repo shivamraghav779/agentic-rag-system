@@ -1,10 +1,12 @@
 """FAISS vector store management."""
 from pathlib import Path
 from typing import List, Optional, Union
+from threading import Lock
 from langchain_core.documents import Document
 from langchain_community.vectorstores import FAISS
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from app.core.config import settings, get_api_key_manager
+from app.core.cache import TTLLRUCache
 
 
 class VectorStoreManager:
@@ -12,13 +14,34 @@ class VectorStoreManager:
 
     def __init__(self):
         """Initialize with Gemini embeddings."""
+        if (settings.vector_db_provider or "faiss").lower() != "faiss":
+            raise NotImplementedError(
+                f"Vector DB provider '{settings.vector_db_provider}' is not implemented yet. Use 'faiss' for now."
+            )
+
         self.api_key_manager = get_api_key_manager()
-        self.embeddings = GoogleGenerativeAIEmbeddings(
-            model=settings.embedding_model,
-            google_api_key=self.api_key_manager.get_current_key()
-        )
+        self.embeddings = self._get_embeddings()
         self.base_dir = Path(settings.vector_store_dir)
         self.base_dir.mkdir(parents=True, exist_ok=True)
+
+        # Cache FAISS stores loaded from disk to reduce IO/latency.
+        self._cache_lock = Lock()
+        self._store_cache = (
+            TTLLRUCache(max_entries=settings.vector_store_cache_size, ttl_seconds=None)
+            if settings.enable_vector_store_cache
+            else None
+        )
+
+    def _get_embeddings(self):
+        provider = (settings.embeddings_provider or "gemini").lower()
+        if provider == "gemini":
+            return GoogleGenerativeAIEmbeddings(
+                model=settings.embedding_model,
+                google_api_key=self.api_key_manager.get_current_key(),
+            )
+        raise NotImplementedError(
+            f"Embeddings provider '{settings.embeddings_provider}' is not implemented yet. Use 'gemini' for now."
+        )
 
     def create_vector_store(
         self,
@@ -33,10 +56,7 @@ class VectorStoreManager:
         parent.mkdir(parents=True, exist_ok=True)
 
         def _create_store():
-            embeddings = GoogleGenerativeAIEmbeddings(
-                model=settings.embedding_model,
-                google_api_key=self.api_key_manager.get_current_key()
-            )
+            embeddings = self._get_embeddings()
             vector_store = FAISS.from_documents(documents, embeddings)
             store_path = parent / store_name
             vector_store.save_local(str(store_path))
@@ -62,11 +82,23 @@ class VectorStoreManager:
     def load_vector_store(self, store_path: str) -> FAISS:
         """Load an existing FAISS vector store."""
         try:
+            if self._store_cache is not None:
+                cached = self._store_cache.get(store_path)
+                if cached is not None:
+                    return cached
+
             vector_store = FAISS.load_local(
                 store_path,
                 self.embeddings,
-                allow_dangerous_deserialization=True
+                allow_dangerous_deserialization=True,
             )
+
+            if self._store_cache is not None:
+                with self._cache_lock:
+                    # Double-check to avoid duplicate overwrites under concurrency.
+                    if self._store_cache.get(store_path) is None:
+                        self._store_cache.set(store_path, vector_store)
+
             return vector_store
         except Exception as e:
             raise Exception(f"Error loading vector store: {str(e)}")
@@ -77,6 +109,10 @@ class VectorStoreManager:
             vector_store = self.load_vector_store(store_path)
             vector_store.add_documents(documents)
             vector_store.save_local(store_path)
+
+            # Invalidate cache to prevent stale internal state.
+            if self._store_cache is not None:
+                self._store_cache.pop(store_path)
         except Exception as e:
             raise Exception(f"Error adding documents to vector store: {str(e)}")
     
@@ -84,10 +120,7 @@ class VectorStoreManager:
         """Perform similarity search in the vector store."""
         def _search():
             # Reinitialize embeddings with current key (in case it changed)
-            embeddings = GoogleGenerativeAIEmbeddings(
-                model=settings.embedding_model,
-                google_api_key=self.api_key_manager.get_current_key()
-            )
+            embeddings = self._get_embeddings()
             vector_store = FAISS.load_local(
                 store_path,
                 embeddings,

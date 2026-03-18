@@ -1,9 +1,9 @@
 """API Key Manager with fallback mechanism for Gemini API keys."""
-import logging
 import time
 from typing import List, Optional
 from threading import Lock
 import google.generativeai as genai
+from app.core.logging import get_logger
 
 # Try to import google exceptions, but handle if not available
 try:
@@ -11,7 +11,7 @@ try:
 except ImportError:
     google_exceptions = None
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class APIKeyManager:

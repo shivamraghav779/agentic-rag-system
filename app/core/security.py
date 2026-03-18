@@ -23,6 +23,8 @@ def get_password_hash(password: str) -> str:
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """Create a JWT access token."""
     to_encode = data.copy()
+    # Include a token type so refresh tokens cannot be used as access tokens.
+    to_encode.update({"type": "access"})
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
@@ -37,6 +39,9 @@ def decode_access_token(token: str) -> Optional[dict]:
     """Decode and verify a JWT token."""
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        # Reject refresh tokens if mistakenly used as access tokens.
+        if payload.get("type") == "refresh":
+            return None
         return payload
     except JWTError:
         return None

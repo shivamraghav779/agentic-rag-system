@@ -1,11 +1,11 @@
 """Multi-provider LLM manager with fallback mechanism for Gemini and Groq."""
-import logging
 import time
 import requests
 from typing import List, Optional, Dict, Any
 from threading import Lock
 from enum import Enum
 import google.generativeai as genai
+from app.core.logging import get_logger
 
 # Try to import google exceptions, but handle if not available
 try:
@@ -13,7 +13,7 @@ try:
 except ImportError:
     google_exceptions = None
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class LLMProvider(str, Enum):

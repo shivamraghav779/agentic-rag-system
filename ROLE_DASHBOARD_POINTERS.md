@@ -171,4 +171,4 @@ Private user with no organization. Can only use auth and their own profile; no d
 | OrgUser   | SuperAdmin, Admin, OrgAdmin (same org) | SuperAdmin, Admin only (user API)               | SuperAdmin        |
 | User      | Self (signup), SuperAdmin, Admin | SuperAdmin, Admin only                          | SuperAdmin        |
 
-Use this file together with `API_DOCUMENTATION.md` to implement role-based dashboards and feature flags in the UI.
+Use this file together with `SYSTEM_DESIGN_DOCUMENT.md` to implement role-based dashboards and feature flags in the UI.

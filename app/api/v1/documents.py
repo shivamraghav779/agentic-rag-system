@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import async_get_db
 from app.models.user import User
 from app.api.deps import get_current_active_user
-from app.schemas.document import DocumentInfo, UploadResponse
+from app.schemas.document import DocumentInfo, UploadResponse, IngestionStatusResponse
 from app.services.document_service import DocumentService
 
 router = APIRouter()
@@ -77,3 +77,17 @@ async def delete_document(
     document_service = DocumentService(db)
     await document_service.delete_document(document_id=document_id, user=current_user)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/{document_id}/ingestion-status",
+    response_model=IngestionStatusResponse,
+)
+async def get_document_ingestion_status(
+    document_id: int,
+    db: AsyncSession = Depends(async_get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Get document ingestion/indexing status."""
+    document_service = DocumentService(db)
+    return await document_service.get_ingestion_status(document_id=document_id, user=current_user)

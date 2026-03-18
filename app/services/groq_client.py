@@ -1,10 +1,10 @@
 """Groq API client for chat completions."""
-import logging
 import requests
 from typing import List, Dict, Optional, Any
 from app.core.config import settings
+from app.core.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class GroqRateLimitError(requests.exceptions.HTTPError):

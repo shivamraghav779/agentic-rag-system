@@ -1,5 +1,7 @@
 """Document service layer."""
 import os
+import asyncio
+import json
 import uuid
 from pathlib import Path
 from typing import List, Optional
@@ -17,24 +19,33 @@ from app.crud.organization import organization as organization_crud
 from app.models.document import Document
 from app.models.user import User, UserRole
 from app.schemas.document import UploadResponse
+from app.schemas.document import IngestionStatusResponse
 from app.services.document_processor import DocumentProcessor
 from app.services.vector_store import VectorStoreManager
 from app.services.structured_data_processor import process_structured
 
 # File types that use hybrid SQL + RAG pipeline (orchestrator)
 STRUCTURED_FILE_TYPES = frozenset({"csv", "xlsx", "xls", "db", "sqlite"})
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class DocumentService:
     """Service for document operations."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(
+        self,
+        db: AsyncSession,
+        document_processor: Optional[DocumentProcessor] = None,
+        vector_store_manager: Optional[VectorStoreManager] = None,
+    ):
         """Initialize document service with database session."""
         self.db = db
         self.document_crud = document_crud
         self.organization_crud = organization_crud
-        self.document_processor = DocumentProcessor()
-        self.vector_store_manager = VectorStoreManager()
+        self.document_processor = document_processor or DocumentProcessor()
+        self.vector_store_manager = vector_store_manager or VectorStoreManager()
     
     async def upload_document(
         self,
@@ -89,56 +100,56 @@ class DocumentService:
         
         try:
             file_id = str(uuid.uuid4())
-            file_extension = Path(file.filename).suffix
+            if not file.filename:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Missing filename in upload",
+                )
+
+            file_extension = Path(file.filename).suffix.lower()
+            if not file_extension or len(file_extension) > 10:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Unsupported or invalid file extension",
+                )
+
+            # Basic extension sanitization (prevents odd characters in paths).
+            # We only keep alnum and '.' from the suffix.
+            ext_clean = "".join(ch for ch in file_extension if ch.isalnum() or ch == ".")
+            if ext_clean != file_extension:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid file extension format",
+                )
+
             safe_filename = f"{file_id}{file_extension}"
             # Per-org layout: artifacts/{org_id}/uploads|vector_store|structured_data
             org_upload_dir = get_organization_upload_dir(organization_id)
             file_path = str(org_upload_dir / safe_filename)
 
-            content = await file.read()
+            # Enforce upload size limit before reading the full payload into memory.
+            # UploadFile.size is not always available depending on the client/proxy.
+            max_read = settings.max_file_size + 1
+            content = await file.read(max_read)
+            if len(content) > settings.max_file_size:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=f"File too large. Max allowed size is {settings.max_file_size} bytes.",
+                )
             with open(file_path, "wb") as buffer:
                 buffer.write(content)
             file_size = len(content)
             vector_store_name = f"doc_{file_id}"
-            sqlite_path = None
             org_vector_dir = get_organization_vector_store_dir(organization_id)
             org_structured_dir = get_organization_structured_data_dir(organization_id)
 
+            # Pre-compute target paths and create the DB record immediately.
+            # Ingestion/indexing happens in the background so uploads don't
+            # block on embedding/index creation.
+            vector_store_path = str(org_vector_dir / vector_store_name)
+            sqlite_path = None
             if file_type in STRUCTURED_FILE_TYPES:
-                sqlite_path, documents = process_structured(
-                    file_path,
-                    file_type,
-                    vector_store_name,
-                    output_dir=str(org_structured_dir),
-                )
-                chunk_count = len(documents)
-                if chunk_count == 0:
-                    if sqlite_path and os.path.exists(sqlite_path):
-                        os.remove(sqlite_path)
-                    os.remove(file_path)
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Structured file could not be processed or is empty",
-                    )
-                vector_store_path = self.vector_store_manager.create_vector_store(
-                    documents,
-                    vector_store_name,
-                    base_dir=str(org_vector_dir),
-                )
-            else:
-                documents = self.document_processor.process_document(file_path, file_type)
-                chunk_count = len(documents)
-                if chunk_count == 0:
-                    os.remove(file_path)
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Document could not be processed or is empty",
-                    )
-                vector_store_path = self.vector_store_manager.create_vector_store(
-                    documents,
-                    vector_store_name,
-                    base_dir=str(org_vector_dir),
-                )
+                sqlite_path = str(Path(org_structured_dir) / f"{vector_store_name}.db")
 
             document_dict = {
                 "user_id": user.id,
@@ -148,20 +159,65 @@ class DocumentService:
                 "file_path": file_path,
                 "vector_store_path": vector_store_path,
                 "file_size": file_size,
-                "chunk_count": chunk_count,
+                "chunk_count": 0,  # not ready yet; set after ingestion
                 "category": category,
                 "version": 1,
+                "extra_metadata": json.dumps(
+                    {"ingestion_status": "processing", "error": None}
+                ),
             }
             if sqlite_path is not None:
                 document_dict["sqlite_path"] = sqlite_path
 
             db_document = await self.document_crud.create_from_dict(self.db, obj_dict=document_dict)
-            
+
+            # Kick off ingestion/indexing in the background.
+            # If this fails, the document remains with chunk_count=0.
+            if settings.enable_celery_tasks:
+                from app.tasks.document_tasks import ingest_document_task
+
+                try:
+                    ingest_document_task.delay(
+                        document_id=db_document.id,
+                    organization_id=organization_id,
+                        file_path=file_path,
+                        file_type=file_type,
+                        vector_store_name=vector_store_name,
+                        org_vector_dir=str(org_vector_dir),
+                        org_structured_dir=str(org_structured_dir),
+                    )
+                except Exception:
+                    # If broker/Redis is down, fall back so uploads don't get stuck.
+                    asyncio.create_task(
+                        self._background_ingest_document(
+                            document_id=db_document.id,
+                            organization_id=organization_id,
+                            file_path=file_path,
+                            file_type=file_type,
+                            vector_store_name=vector_store_name,
+                            org_vector_dir=str(org_vector_dir),
+                            org_structured_dir=str(org_structured_dir),
+                        )
+                    )
+            else:
+                # Fallback: non-durable background job (useful for local dev).
+                asyncio.create_task(
+                    self._background_ingest_document(
+                        document_id=db_document.id,
+                        organization_id=organization_id,
+                        file_path=file_path,
+                        file_type=file_type,
+                        vector_store_name=vector_store_name,
+                        org_vector_dir=str(org_vector_dir),
+                        org_structured_dir=str(org_structured_dir),
+                    )
+                )
+
             return UploadResponse(
                 document_id=db_document.id,
                 filename=file.filename,
-                message="Document uploaded and processed successfully",
-                chunk_count=chunk_count
+                message="Document uploaded. Ingestion is running; chat will be available after indexing completes.",
+                chunk_count=0,
             )
         
         except HTTPException:
@@ -267,6 +323,31 @@ class DocumentService:
                 detail="Access denied to this document"
             )
         return document
+
+    async def get_ingestion_status(self, document_id: int, user: User) -> IngestionStatusResponse:
+        """Return ingestion/indexing status for a given document."""
+        document = await self.get_document(document_id=document_id, user=user)
+
+        ingestion_status = "unknown"
+        error: Optional[str] = None
+        extra = getattr(document, "extra_metadata", None)
+        if extra:
+            try:
+                parsed = json.loads(extra)
+                ingestion_status = parsed.get("ingestion_status") or ingestion_status
+                err = parsed.get("error")
+                if isinstance(err, str) and err.strip():
+                    error = err.strip()
+            except Exception:
+                # If metadata is malformed, keep defaults.
+                pass
+
+        return IngestionStatusResponse(
+            document_id=document.id,
+            ingestion_status=ingestion_status,
+            error=error,
+            chunk_count=getattr(document, "chunk_count", 0) or 0,
+        )
 
     async def delete_document(self, document_id: int, user: User) -> None:
         """
@@ -379,4 +460,130 @@ class DocumentService:
                     detail="Unsupported file type. Supported: PDF, DOCX, TXT, HTML, MD, Excel (xlsx/xls), CSV, SQLite (db/sqlite)",
                 )
         return file_type
+
+    async def _background_ingest_document(
+        self,
+        *,
+        document_id: int,
+        organization_id: int,
+        file_path: str,
+        file_type: str,
+        vector_store_name: str,
+        org_vector_dir: str,
+        org_structured_dir: str,
+    ) -> None:
+        """Background ingestion/indexing job for an uploaded document."""
+        # Import here to avoid circular imports during startup.
+        from app.db.base import AsyncSessionLocal
+
+        async with AsyncSessionLocal() as session:
+            try:
+                sqlite_path, vector_store_path, chunk_count = await asyncio.to_thread(
+                    self._ingest_and_index_document_sync,
+                    file_path=file_path,
+                    file_type=file_type,
+                    vector_store_name=vector_store_name,
+                    org_vector_dir=org_vector_dir,
+                    org_structured_dir=org_structured_dir,
+                )
+
+                doc = await self.document_crud.get(session, id=document_id)
+                if not doc:
+                    return
+
+                # Defense-in-depth: only ingest within the expected org.
+                if getattr(doc, "organization_id", None) != organization_id:
+                    return
+
+                doc.vector_store_path = vector_store_path
+                doc.chunk_count = chunk_count
+                doc.sqlite_path = sqlite_path
+                doc.extra_metadata = json.dumps(
+                    {"ingestion_status": "ready", "error": None}
+                )
+                session.add(doc)
+                await session.commit()
+            except HTTPException as exc:
+                doc = await self.document_crud.get(session, id=document_id)
+                if doc:
+                    doc.chunk_count = 0
+                    doc.extra_metadata = json.dumps(
+                        {"ingestion_status": "failed", "error": exc.detail}
+                    )
+                    session.add(doc)
+                    await session.commit()
+                logger.warning(
+                    "ingestion_failed",
+                    extra={"document_id": document_id, "detail": exc.detail},
+                )
+            except Exception as e:
+                doc = await self.document_crud.get(session, id=document_id)
+                if doc:
+                    doc.chunk_count = 0
+                    doc.extra_metadata = json.dumps(
+                        {"ingestion_status": "failed", "error": str(e)}
+                    )
+                    session.add(doc)
+                    await session.commit()
+                logger.exception(
+                    "ingestion_failed",
+                    extra={"document_id": document_id},
+                )
+
+    def _ingest_and_index_document_sync(
+        self,
+        *,
+        file_path: str,
+        file_type: str,
+        vector_store_name: str,
+        org_vector_dir: str,
+        org_structured_dir: str,
+    ):
+        """
+        Synchronous ingestion + indexing.
+
+        Runs in a worker thread via `asyncio.to_thread(...)`.
+        Returns: (sqlite_path, vector_store_path, chunk_count)
+        """
+        sqlite_path = None
+        if file_type in STRUCTURED_FILE_TYPES:
+            sqlite_path, documents = process_structured(
+                file_path,
+                file_type,
+                vector_store_name,
+                output_dir=str(org_structured_dir),
+            )
+            chunk_count = len(documents)
+            if chunk_count == 0:
+                if sqlite_path and os.path.exists(sqlite_path):
+                    os.remove(sqlite_path)
+                os.remove(file_path)
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Structured file could not be processed or is empty",
+                )
+
+            vector_store_path = self.vector_store_manager.create_vector_store(
+                documents,
+                vector_store_name,
+                base_dir=str(org_vector_dir),
+            )
+            return sqlite_path, vector_store_path, chunk_count
+
+        # Unstructured: RAG-only via FAISS
+        documents = self.document_processor.process_document(file_path, file_type)
+        chunk_count = len(documents)
+        if chunk_count == 0:
+            os.remove(file_path)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Document could not be processed or is empty",
+            )
+
+        vector_store_path = self.vector_store_manager.create_vector_store(
+            documents,
+            vector_store_name,
+            base_dir=str(org_vector_dir),
+        )
+        return sqlite_path, vector_store_path, chunk_count
 

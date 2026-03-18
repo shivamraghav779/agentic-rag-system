@@ -29,6 +29,13 @@ class Settings(BaseSettings):
     # LLM Configuration
     temperature: float = 0.7
     max_output_tokens: int = 2048
+    # LLM robustness
+    llm_timeout_seconds: int = 90
+    llm_max_retries: int = 2
+
+    # Faithfulness / grounding verification (prevents hallucinations)
+    enable_grounding_check: bool = True
+    grounding_max_output_tokens: int = 256
     
     # Retrieval Configuration
     retrieval_k: int = 4  # Number of documents to retrieve (used when reranking disabled)
@@ -66,10 +73,57 @@ class Settings(BaseSettings):
     # Chunking configuration
     chunk_size: int = 1000
     chunk_overlap: int = 200
+
+    # Chunking quality controls
+    # - `recursive`: paragraph-aware splitting via RecursiveCharacterTextSplitter
+    # - `character`: fixed-length splitting via CharacterTextSplitter
+    chunking_strategy: str = "recursive"
+    min_chunk_size_chars: int = 150
+    max_chunks_per_document: int = 2000
+
+    # Context budget (prevents prompt overflow)
+    # We budget by characters (cheap heuristic). Token estimation differs by model,
+    # but this keeps prompt sizes bounded and predictable.
+    context_max_chars: int = 12000
+    context_max_doc_chars: int = 3000
+
+    # Caching (reduces repeated cost/latency; in-memory only per process)
+    enable_vector_store_cache: bool = True
+    vector_store_cache_size: int = 8
+    enable_llm_prompt_cache: bool = True
+    llm_prompt_cache_ttl_seconds: int = 3600
+    llm_prompt_cache_max_entries: int = 1024
+    llm_prompt_cache_max_prompt_chars: int = 2000
+
+    # Upload validation
+    max_file_size: int = 10 * 1024 * 1024  # 10 MiB
+
+    # Pluggable RAG providers (extendable)
+    embeddings_provider: str = "gemini"
+    vector_db_provider: str = "faiss"
     
     # Server configuration
     host: str = "0.0.0.0"
     port: int = 8000
+
+    # CORS configuration
+    allowed_origins: str = "*"  # Comma-separated origins; use "*" for all
+    cors_allow_credentials: bool = True
+
+    # Rate limiting (simple in-memory; protects high-cost endpoints)
+    rate_limit_enabled: bool = True
+    chat_rate_limit_per_minute: int = 60
+    chat_stream_rate_limit_per_minute: int = 30
+
+    # SQLAlchemy connection pooling tuning
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
+    db_pool_timeout_seconds: int = 30
+
+    # Celery + Redis (durable background jobs)
+    enable_celery_tasks: bool = True
+    celery_broker_url: str = "redis://localhost:6379/0"
+    celery_result_backend: str = "redis://localhost:6379/1"
     
     class Config:
         env_file = ".env"

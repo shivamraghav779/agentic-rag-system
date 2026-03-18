@@ -44,3 +44,7 @@ pydantic-settings
 numpy
 setuptools
 requests
+
+# Background jobs
+celery
+redis

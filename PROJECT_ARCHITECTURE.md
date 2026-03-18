@@ -39,7 +39,23 @@ This document describes the architecture of the AI Business Knowledge System - a
 │  └─────────────────────────────────────────────────┘      │
 └───────┬────────────────────────────────────────────────────┘
         │
+        │ enqueue ingest_document_task
         │
+┌───────▼────────────────────────────────────────────────────┐
+│        Queuing System (Celery + Redis broker/backend)       │
+│   - enqueues: ingest_document_task                          │
+│   - broker/result backend: Redis                             │
+└────────┬───────────────────────────────────────────────────┘
+         │
+         │ consumed by Celery worker
+         │
+┌────────▼───────────────────────────────────────────────────┐
+│          Background Worker (Celery worker)                 │
+│   runs ingest_document_task:                                   │
+│   Document Processor -> embeddings -> FAISS -> artifacts/DB  │
+└────────┬────────────────────────────────────────────────────┘
+         │
+         │ SQLAlchemy ORM updates (documents/chat metadata)
 ┌───────▼────────────────────────────────────────────────────┐
 │                    CRUD Layer                               │
 │          (Data Access - app/crud/)                         │
@@ -256,7 +272,7 @@ Vector stores, structured data (SQLite), and uploads are stored **per organizati
 - `artifacts/{org_id}/vector_store/` — FAISS indexes (one folder per document)
 - `artifacts/{org_id}/structured_data/` — SQLite DBs from Excel/CSV/DB uploads
 
-See **ARTIFACTS_AND_PIPELINE.md** for the full layout, upload/chat pipeline, and robustness suggestions.
+For end-to-end ingestion and chat behavior (including robustness checks), see `SYSTEM_DESIGN_DOCUMENT.md`.
 
 ## Data Flow
 
@@ -420,7 +436,7 @@ SuperAdmin
 - Private users (USER role) separate from organization users
 - Access control enforced at service layer
 
-See `MULTI_TENANCY.md` for detailed documentation.
+For isolation rules and multi-tenancy behavior, see `SYSTEM_DESIGN_DOCUMENT.md`.
 
 ## Security Features
 
@@ -505,7 +521,7 @@ See `.env` file for configuration:
 
 - **Swagger UI**: Available at `/docs` (when running)
 - **ReDoc**: Available at `/redoc` (when running)
-- **Markdown Docs**: See `API_DOCUMENTATION.md`
+- **System Design (Markdown)**: See `SYSTEM_DESIGN_DOCUMENT.md`
 
 ## Contributing
 

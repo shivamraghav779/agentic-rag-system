@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from app.models.document import Document
 from app.services.sql_agent_service import run_sql_agent
+from app.prompts.templates import CLASSIFY_QUERY_PROMPT
 
 
 # SQL-like keywords: aggregations, calculations, comparisons
@@ -49,13 +50,7 @@ class QueryOrchestrator:
         rag_score = sum(1 for k in RAG_KEYWORDS if k in query_lower)
 
         if abs(sql_score - rag_score) <= 1:
-            prompt = f"""Classify the following query as either 'sql' or 'rag'.
-SQL = aggregations, counts, calculations, comparisons, performance metrics, totals, averages.
-RAG = descriptive information, explanations, details about specific entities.
-
-Query: {query}
-
-Respond with only 'sql' or 'rag':"""
+            prompt = CLASSIFY_QUERY_PROMPT.format(query=query)
             try:
                 response = self.llm_callable(prompt).strip().lower()
                 return "sql" if "sql" in response else "rag"

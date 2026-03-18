@@ -7,6 +7,11 @@ Pre-retrieval and post-retrieval RAG enhancements aligned with the notebook pipe
 from typing import List, Callable, Optional
 from langchain_core.documents import Document
 from app.core.config import settings
+from app.prompts.templates import (
+    REWRITE_QUERY_PROMPT,
+    EXPAND_QUERY_PROMPT,
+    COMPRESS_CONTEXT_PROMPT,
+)
 
 
 # Optional reranking: sentence-transformers may not be installed
@@ -50,12 +55,7 @@ class QueryProcessor:
         if not self.enable_rewriting:
             return query
 
-        rewrite_prompt = f"""Rewrite the following query to be more effective for retrieving relevant documents.
-Make it more specific, include relevant terms, and maintain the original intent.
-
-Original query: {query}
-
-Rewritten query (just the query, no explanation):"""
+        rewrite_prompt = REWRITE_QUERY_PROMPT.format(query=query)
 
         try:
             rewritten = self.llm_callable(rewrite_prompt)
@@ -71,12 +71,7 @@ Rewritten query (just the query, no explanation):"""
         if not self.enable_expansion:
             return query
 
-        expansion_prompt = f"""Expand the following query with relevant synonyms and related terms.
-Return the expanded query with additional relevant keywords. Keep it concise.
-
-Original query: {query}
-
-Expanded query (include original + synonyms, keep it concise):"""
+        expansion_prompt = EXPAND_QUERY_PROMPT.format(query=query)
 
         try:
             expanded = self.llm_callable(expansion_prompt)
@@ -171,13 +166,11 @@ class PromptCompressor:
         if len(context) <= target_length:
             return context
 
-        compression_prompt = f"""Compress the following context to {target_length} characters or less,
-while preserving all information relevant to answering this query: "{query}"
-
-Context to compress:
-{context}
-
-Compressed context (only the compressed text, no explanation):"""
+        compression_prompt = COMPRESS_CONTEXT_PROMPT.format(
+            target_length=target_length,
+            query=query,
+            context=context,
+        )
 
         try:
             compressed = self.llm_callable(compression_prompt)

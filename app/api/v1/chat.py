@@ -1,6 +1,8 @@
 """Chat API routes with rate limiting and history."""
+import json
 from typing import List, Optional
 from fastapi import APIRouter, Depends, status, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import async_get_db
@@ -27,6 +29,38 @@ async def chat_with_document(
     """
     chat_service = ChatService(db)
     return await chat_service.chat_with_document(request=request, user=current_user)
+
+
+@router.post("/stream")
+async def chat_with_document_stream(
+    request: ChatRequest,
+    db: AsyncSession = Depends(async_get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Chat with a document and stream the final answer in chunks.
+
+    Note: Current providers are non-streaming; this endpoint streams the response
+    payload to the client as it is broken into smaller pieces.
+    """
+    chat_service = ChatService(db)
+    chat_response = await chat_service.chat_with_document(request=request, user=current_user)
+
+    async def _gen():
+        answer = chat_response.answer or ""
+        chunk_size = 80
+        for i in range(0, len(answer), chunk_size):
+            chunk = answer[i : i + chunk_size]
+            payload = {"type": "delta", "text": chunk}
+            yield f"data: {json.dumps(payload)}\n\n"
+        payload = {
+            "type": "final",
+            "conversation_id": chat_response.conversation_id,
+            "source_documents": chat_response.source_documents,
+        }
+        yield f"data: {json.dumps(payload)}\n\n"
+
+    return StreamingResponse(_gen(), media_type="text/event-stream")
 
 
 @router.get("/history", response_model=List[ChatHistoryResponse])

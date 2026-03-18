@@ -1,4 +1,5 @@
 """Chat service layer."""
+import asyncio
 from datetime import datetime
 from typing import List, Optional
 from fastapi import HTTPException, status
@@ -26,13 +27,13 @@ from app.core.config import settings
 class ChatService:
     """Service for chat operations."""
     
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, rag_chain: Optional[RAGChain] = None):
         """Initialize chat service with database session."""
         self.db = db
         self.document_crud = document_crud
         self.conversation_crud = conversation_crud
         self.chat_history_crud = chat_history_crud
-        self.rag_chain = RAGChain()
+        self.rag_chain = rag_chain or RAGChain()
     
     async def check_rate_limit(self, user: User) -> bool:
         """
@@ -88,6 +89,15 @@ class ChatService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied to this document"
             )
+
+        # Guard against incomplete/legacy ingestion records.
+        # If a document exists but was never fully indexed, avoid FAISS/vector errors.
+        chunk_count = getattr(document, "chunk_count", None)
+        if chunk_count is None or chunk_count <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Document is not ready for chat yet. Please try again after ingestion completes.",
+            )
         
         # Validate question
         if not request.question.strip():
@@ -122,17 +132,28 @@ class ChatService:
                     rag_query_fn=lambda vs, q, **kw: self.rag_chain.query(vs, q, **kw),
                     llm_callable=self.rag_chain._llm_generate,
                 )
-                result = orchestrator.route_query(
-                    request.question,
-                    system_prompt=system_prompt,
-                    conversation_history=conversation_history,
+                # RAG/SQL orchestration is sync and can be CPU/network heavy.
+                # Run it off the event loop to keep the API responsive.
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        orchestrator.route_query,
+                        request.question,
+                        system_prompt=system_prompt,
+                        conversation_history=conversation_history,
+                    ),
+                    timeout=settings.llm_timeout_seconds,
                 )
             else:
-                result = self.rag_chain.query(
-                    document.vector_store_path,
-                    request.question,
-                    system_prompt=system_prompt,
-                    conversation_history=conversation_history,
+                # RAGChain.query() is synchronous; run it in a worker thread.
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self.rag_chain.query,
+                        document.vector_store_path,
+                        request.question,
+                        system_prompt=system_prompt,
+                        conversation_history=conversation_history,
+                    ),
+                    timeout=settings.llm_timeout_seconds,
                 )
             
             # Extract token counts
@@ -502,7 +523,10 @@ class ChatService:
     async def _generate_conversation_title(self, question: str) -> str:
         """Generate conversation title from first question."""
         try:
-            return self.rag_chain.generate_conversation_title(question)
+            return await asyncio.wait_for(
+                asyncio.to_thread(self.rag_chain.generate_conversation_title, question),
+                timeout=settings.llm_timeout_seconds,
+            )
         except Exception:
             return question[:100] if len(question) > 100 else question
 

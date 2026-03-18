@@ -34,3 +34,11 @@ class UploadResponse(BaseModel):
     message: str
     chunk_count: int
 
+
+class IngestionStatusResponse(BaseModel):
+    """Document ingestion status (background indexing)."""
+    document_id: int
+    ingestion_status: str
+    error: Optional[str] = None
+    chunk_count: int = 0
+
