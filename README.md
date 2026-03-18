@@ -1,4 +1,14 @@
-# Chatbot Backend
+# Agentic RAG System
+
+## Project Overview
+TechTattava Chatbot Backend is a secure, multi-tenant RAG-based document chatbot.
+Organizations can upload documents, a background ingestion pipeline chunks/embeds them into a per-organization FAISS vector store, and users can chat with those documents via retrieval + grounding verification.
+
+Key highlights:
+- Multi-tenant authorization (OrgAdmin/OrgUser/Private User roles)
+- Async ingestion via `Celery` + `Redis` (with ingestion status tracking)
+- Document-grounded chat via RAG (Gemini/Groq provider fallback)
+- Rate limiting + structured JSON logs + global exception handling
 
 ## Documentation (source of truth)
 - `PROJECT_ARCHITECTURE.md` - layered code architecture + component diagram
