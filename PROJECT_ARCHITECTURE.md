@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the architecture of the AI Business Knowledge System - a secure, multi-tenant chatbot application that allows users to upload documents and interactively chat with their content using RAG (Retrieval-Augmented Generation).
+This document describes the architecture of the AI Business Knowledge System - a secure, multi-tenant chatbot application that allows users to upload documents and interactively chat with their content using a multi-agent pipeline (Router + Retrieval + Tool + General), powered by RAG (Retrieval-Augmented Generation).
 
 ## System Architecture
 
@@ -35,7 +35,8 @@ This document describes the architecture of the AI Business Knowledge System - a
 │  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘      │
 │       │            │            │            │             │
 │  ┌────▼────────────▼────────────▼────────────▼─────┐      │
-│  │  Document Processor │ RAG Chain │ Vector Store  │      │
+│  │ Agents: Router | Retrieval | Tool | General      │      │
+│  │ Services: RAG Chain | LLM Service | Cache Service│      │
 │  └─────────────────────────────────────────────────┘      │
 └───────┬────────────────────────────────────────────────────┘
         │
@@ -104,7 +105,7 @@ The application follows a **3-layer architecture**:
 - `auth.py`: Authentication endpoints (signup, login, refresh token)
 - `users.py`: User management endpoints
 - `documents.py`: Document upload and management
-- `chat.py`: Chat and conversation endpoints
+- `chat.py`: Chat and conversation endpoints (multi-agent routed)
 - `organizations.py`: Organization management
 - `admin.py`: Admin-specific operations
 - `statistics.py`: Statistics and dashboard endpoints
@@ -133,13 +134,15 @@ async def upload_document(
 - Implement business logic and rules
 - Coordinate between multiple CRUD operations
 - Handle complex workflows
-- Integrate with external services (AI, Vector Store)
+- Integrate with external services (AI, Vector Store, tools)
 
 **Components**:
 - `auth_service.py`: Authentication business logic
 - `user_service.py`: User management logic
 - `document_service.py`: Document processing and management
 - `chat_service.py`: Chat and conversation logic
+- `llm_service.py`: LLM abstraction for non-RAG/general responses
+- `cache_service.py`: In-memory TTL response cache for agent outputs
 - `organization_service.py`: Organization management
 - `statistics_service.py`: Statistics and dashboard data generation
 - `document_processor.py`: Document parsing and chunking
@@ -160,6 +163,21 @@ class DocumentService:
         # Coordinate: CRUD operations, file processing, vector store
         pass
 ```
+
+### 2.1 Agent Layer (Routing + Tooling)
+**Location**: `app/agents/`
+
+**Responsibility**:
+- Route chat requests by intent
+- Reuse retrieval as a tool
+- Execute safe utility tools (calculator, DB count)
+- Provide direct LLM fallback when retrieval/tools are not needed
+
+**Components**:
+- `router.py`: Intent-based routing (`retrieval`, `tool`, `general`)
+- `retrieval_agent.py`: Wrapper over existing `RAGChain` + `QueryOrchestrator`
+- `tool_agent.py`: Calculator + DB document count + document search tool
+- `general_agent.py`: Direct LLM response via `LLMService`
 
 ### 3. CRUD Layer (Data Access)
 **Location**: `app/crud/`
@@ -197,6 +215,12 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 ```
 chatbot/
 ├── app/
+│   ├── agents/                # Agent orchestration layer
+│   │   ├── router.py          # Route query intent
+│   │   ├── retrieval_agent.py # Retrieval wrapper over RAG
+│   │   ├── tool_agent.py      # Calculator/DB/document-search tools
+│   │   └── general_agent.py   # Direct LLM fallback agent
+│   │
 │   ├── api/                    # API routes
 │   │   ├── deps.py            # Dependencies (auth, DB session)
 │   │   └── v1/                # API version 1
@@ -243,6 +267,8 @@ chatbot/
 │       ├── user_service.py     # User management service
 │       ├── document_service.py # Document service
 │       ├── chat_service.py    # Chat service
+│       ├── llm_service.py     # LLM abstraction for general agent
+│       ├── cache_service.py   # TTL cache for agent responses
 │       ├── organization_service.py  # Organization service
 │       ├── statistics_service.py    # Statistics service
 │       ├── document_processor.py    # Document processing
@@ -288,25 +314,15 @@ For end-to-end ingestion and chat behavior (including robustness checks), see `S
    ↓
 3. DocumentService.upload_document()
    - Validates user can upload
-   - Saves file to disk
-   - Processes document (DocumentProcessor)
-   - Creates vector store (VectorStoreManager)
-   - Saves metadata (Document CRUD)
+   - Saves file metadata with ingestion_status=processing
+   - Enqueues Celery ingestion task
    ↓
-4. DocumentProcessor.process_document()
-   - Loads document (PDF/DOCX/TXT/HTML)
-   - Splits into chunks
-   - Returns Document objects
+4. Celery Worker (ingest_document_task)
+   - Processes chunks + embeddings
+   - Writes FAISS + structured artifacts
+   - Updates document ingestion status/chunk_count
    ↓
-5. VectorStoreManager.create_vector_store()
-   - Generates embeddings (Gemini)
-   - Creates FAISS index
-   - Saves to disk
-   ↓
-6. Document CRUD.create_from_dict()
-   - Saves to database
-   ↓
-7. Response → Client
+5. Response → Client (+ ingestion-status polling endpoint)
 ```
 
 ### Chat Flow
@@ -324,28 +340,18 @@ For end-to-end ingestion and chat behavior (including robustness checks), see `S
    - Gets/creates conversation
    - Retrieves conversation history
    ↓
-4. RAGChain.query()
-   - Loads vector store
-   - Performs similarity search
-   - Retrieves relevant chunks
-   - Constructs prompt with:
-     - System prompt (user's custom)
-     - Instruction prompt (default)
-     - Conversation history (last 5 chats)
-     - Current date/time
-     - Retrieved document chunks
-     - User's question
+4. Router Agent selects route
+   - retrieval: RetrievalAgent (RAG/query orchestration)
+   - tool: ToolAgent (calculator, DB count, document-search tool)
+   - general: GeneralAgent (direct LLMService response)
+   - optional answer cache by org+document+route+query
    ↓
-5. Gemini API
-   - Generates response
-   - Returns answer + token counts
-   ↓
-6. ChatService
+5. ChatService
    - Saves chat history (ChatHistory CRUD)
    - Updates user token usage
    - Updates conversation timestamp
    ↓
-7. Response → Client
+6. Response → Client
 ```
 
 ## Key Technologies
@@ -360,9 +366,10 @@ For end-to-end ingestion and chat behavior (including robustness checks), see `S
 - **Alembic**: Database migration tool
 
 ### AI/ML
-- **Google Gemini**: LLM for generating responses and embeddings
+- **Google Gemini / Groq**: LLM providers for generation
 - **FAISS**: Vector similarity search library
 - **Langchain**: Document loaders and text splitting
+- **Agent Layer**: Router + Retrieval + Tool + General agents
 
 ### Authentication & Security
 - **JWT**: JSON Web Tokens for authentication
@@ -489,7 +496,7 @@ See `.env` file for configuration:
 2. **Database Indexing**: Indexed columns for fast queries
 3. **Connection Pooling**: SQLAlchemy connection pooling
 4. **Async Operations**: FastAPI async endpoints
-5. **Caching**: (To be implemented) Redis for frequently accessed data
+5. **Caching**: In-memory TTL caching for selected LLM/agent responses
 
 ## Scalability
 
@@ -500,7 +507,7 @@ See `.env` file for configuration:
 
 ## Future Enhancements
 
-1. **Caching Layer**: Redis for frequently accessed data
+1. **Caching Layer**: Move response cache to Redis for shared multi-instance cache
 2. **Background Jobs**: Celery for async document processing
 3. **Monitoring**: Application performance monitoring
 4. **Analytics**: Usage analytics and reporting

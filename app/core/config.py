@@ -95,6 +95,11 @@ class Settings(BaseSettings):
     llm_prompt_cache_max_entries: int = 1024
     llm_prompt_cache_max_prompt_chars: int = 2000
 
+    # Multi-agent routing (chat service)
+    enable_multi_agent_routing: bool = True
+    enable_agent_response_cache: bool = True
+    agent_response_cache_ttl_seconds: int = 120
+
     # Upload validation
     max_file_size: int = 10 * 1024 * 1024  # 10 MiB
 

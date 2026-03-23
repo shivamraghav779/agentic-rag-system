@@ -29,6 +29,11 @@ API docs (when running):
 4. Start API server
    - `uvicorn main:app --host 0.0.0.0 --port 8000`
 
+### Multi-Agent Config (optional)
+- `ENABLE_MULTI_AGENT_ROUTING=true` enables Router/Tool/General/Retrieval flow
+- `ENABLE_AGENT_RESPONSE_CACHE=true` enables short-lived answer cache
+- `AGENT_RESPONSE_CACHE_TTL_SECONDS=120` controls cache TTL
+
 ## Handy Endpoints
 - Health: `GET /health`
 - Upload document: `POST /api/v1/documents/upload`

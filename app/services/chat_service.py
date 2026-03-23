@@ -1,5 +1,6 @@
 """Chat service layer."""
 import asyncio
+import time
 from datetime import datetime
 from typing import List, Optional
 from fastapi import HTTPException, status
@@ -19,8 +20,14 @@ from app.schemas.chat import (
     ConversationCreate,
     ConversationUpdate
 )
+from app.agents.general_agent import GeneralAgent
+from app.agents.retrieval_agent import RetrievalAgent
+from app.agents.router import RouterAgent
+from app.agents.tool_agent import ToolAgent
+from app.core.logging import get_logger
+from app.services.cache_service import CacheService
+from app.services.llm_service import LLMService
 from app.services.rag_chain import RAGChain
-from app.services.query_orchestrator import QueryOrchestrator
 from app.core.config import settings
 
 
@@ -29,11 +36,17 @@ class ChatService:
     
     def __init__(self, db: AsyncSession, rag_chain: Optional[RAGChain] = None):
         """Initialize chat service with database session."""
+        self.logger = get_logger("app.chat_service")
         self.db = db
         self.document_crud = document_crud
         self.conversation_crud = conversation_crud
         self.chat_history_crud = chat_history_crud
         self.rag_chain = rag_chain or RAGChain()
+        self.cache = CacheService(ttl_seconds=settings.agent_response_cache_ttl_seconds)
+        self.router_agent = RouterAgent()
+        self.retrieval_agent = RetrievalAgent(rag_chain=self.rag_chain)
+        self.tool_agent = ToolAgent(db=self.db, retrieval_agent=self.retrieval_agent)
+        self.general_agent = GeneralAgent(LLMService(rag_chain=self.rag_chain))
     
     async def check_rate_limit(self, user: User) -> bool:
         """
@@ -125,36 +138,75 @@ class ChatService:
             # Build system prompt based on user type
             system_prompt = await self._build_system_prompt(user, document)
 
-            # Hybrid pipeline: use orchestrator for structured docs (Excel/CSV/DB), else RAG only
-            if getattr(document, "sqlite_path", None):
-                orchestrator = QueryOrchestrator(
-                    document=document,
-                    rag_query_fn=lambda vs, q, **kw: self.rag_chain.query(vs, q, **kw),
-                    llm_callable=self.rag_chain._llm_generate,
-                )
-                # RAG/SQL orchestration is sync and can be CPU/network heavy.
-                # Run it off the event loop to keep the API responsive.
-                result = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        orchestrator.route_query,
-                        request.question,
-                        system_prompt=system_prompt,
-                        conversation_history=conversation_history,
-                    ),
-                    timeout=settings.llm_timeout_seconds,
+            route = (
+                self.router_agent.route_query(request.question)
+                if settings.enable_multi_agent_routing
+                else "retrieval"
+            )
+            cache_key = (
+                f"{user.organization_id}:{document.id}:{route}:{request.question.strip().lower()}"
+            )
+            cached_answer = (
+                self.cache.get(cache_key)
+                if settings.enable_agent_response_cache
+                else None
+            )
+            if cached_answer is not None:
+                result = {"answer": cached_answer, "source_documents": []}
+                selected_agent = f"{route}(cache)"
+                self.logger.info(
+                    f"Agent route selected: {selected_agent}",
+                    extra={
+                        "path": "/api/v1/chat",
+                        "method": "POST",
+                        "duration_ms": 0,
+                        "status_code": 200,
+                    },
                 )
             else:
-                # RAGChain.query() is synchronous; run it in a worker thread.
-                result = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        self.rag_chain.query,
-                        document.vector_store_path,
-                        request.question,
-                        system_prompt=system_prompt,
-                        conversation_history=conversation_history,
-                    ),
-                    timeout=settings.llm_timeout_seconds,
+                start = time.perf_counter()
+                if route == "retrieval":
+                    result = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            self.retrieval_agent.answer,
+                            query=request.question,
+                            document=document,
+                            system_prompt=system_prompt,
+                            conversation_history=conversation_history,
+                        ),
+                        timeout=settings.llm_timeout_seconds,
+                    )
+                    selected_agent = "retrieval_agent"
+                elif route == "tool":
+                    result = await asyncio.wait_for(
+                        self.tool_agent.answer(
+                            query=request.question,
+                            user=user,
+                            document=document,
+                            organization_id=document.organization_id,
+                            system_prompt=system_prompt,
+                        ),
+                        timeout=settings.llm_timeout_seconds,
+                    )
+                    selected_agent = "tool_agent"
+                else:
+                    result = await asyncio.wait_for(
+                        asyncio.to_thread(self.general_agent.answer, request.question),
+                        timeout=settings.llm_timeout_seconds,
+                    )
+                    selected_agent = "general_agent"
+                elapsed_ms = int((time.perf_counter() - start) * 1000)
+                self.logger.info(
+                    f"Agent route selected: {selected_agent}; query={request.question[:160]}",
+                    extra={
+                        "path": "/api/v1/chat",
+                        "method": "POST",
+                        "duration_ms": elapsed_ms,
+                        "status_code": 200,
+                    },
                 )
+                if settings.enable_agent_response_cache and result.get("answer"):
+                    self.cache.set(cache_key, result["answer"])
             
             # Extract token counts
             prompt_tokens = result.get("prompt_tokens", 0)

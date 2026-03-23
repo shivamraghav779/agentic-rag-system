@@ -31,29 +31,37 @@ It is intentionally paired with `PROJECT_ARCHITECTURE.md`, which explains the la
      - `documents.sqlite_path` for structured docs
      - `documents.extra_metadata.ingestion_status = "ready"`
 
-### 2.2 Chat with a Document (RAG)
+### 2.2 Chat with a Document (Multi-Agent + RAG)
 1. Client sends:
    - `POST /api/v1/chat` or `POST /api/v1/chat/stream`
 2. `ChatService.chat_with_document()`:
    - verifies the user is an organization user
    - enforces chat limits (daily, per user)
    - checks the document is accessible and ingestion is complete (`chunk_count > 0`)
-3. `RAGChain.query()`:
-   - pre-retrieval: query rewrite + expansion
-   - retrieval: vector search from `document.vector_store_path`
-   - reranking:
-     - cross-encoder if available
-     - otherwise explicit FAISS score-based reranking
-   - context building with a strict character budget to reduce prompt overflow
-   - post-retrieval: optional prompt compression
-   - generation:
-     - multi-provider fallback (Gemini -> Groq)
-   - faithfulness / grounding verification:
-     - verifier checks the proposed answer against the retrieved context
-     - if unsupported, the system returns a refusal-style answer
-4. Persist chat history:
+3. Router agent selects route:
+   - `retrieval`: use `RetrievalAgent` (RAG pipeline)
+   - `tool`: use `ToolAgent`
+   - `general`: use `GeneralAgent` for direct LLM answer
+4. Retrieval path (`RetrievalAgent`) delegates to existing stack:
+   - `QueryOrchestrator` for structured docs (`sqlite_path`)
+   - `RAGChain.query()` for unstructured docs
+   - includes rewrite/expansion, retrieval, reranking, prompt compression, grounding verification
+5. Tool path (`ToolAgent`) supports:
+   - calculator tool (safe arithmetic)
+   - DB tool (`how many documents` in current organization)
+   - document-search tool (calls RetrievalAgent/RAG as tool)
+6. Optional response cache:
+   - key: `organization_id + document_id + route + normalized_query`
+   - TTL controlled by settings
+7. Persist chat history:
    - stores question/answer + token usage in `chat_history`
    - updates `conversation.updated_at` and `user.used_tokens`
+
+### 2.3 Multi-Agent Runtime Controls
+- `ENABLE_MULTI_AGENT_ROUTING=true|false`
+  - `false` forces retrieval-only behavior (safe fallback mode)
+- `ENABLE_AGENT_RESPONSE_CACHE=true|false`
+- `AGENT_RESPONSE_CACHE_TTL_SECONDS=...`
 
 ## 3. Multi-Tenancy & Data Isolation
 
@@ -102,6 +110,10 @@ It is intentionally paired with `PROJECT_ARCHITECTURE.md`, which explains the la
 ## 5. Observability & Operations
 
 - Structured logging: JSON logs with `request_id`.
+- Chat service logs include:
+  - selected agent route
+  - query snippet
+  - response duration
 - Global exception handling middleware:
   - SQLAlchemy errors -> safe 5xx JSON
   - LLM/Gemini/Groq errors -> mapped HTTP status codes
